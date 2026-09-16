@@ -6,6 +6,9 @@ interface TranscriptPanelState {
   setIsCurrentTimeOutOfView: (value: boolean) => void;
   targetScrollTime: number | null;
   setTargetScrollTime: (time: number | null) => void;
+  /** Term carried over from the results filter, marked in the transcript. */
+  urlFilterTerm: string;
+  setUrlFilterTerm: (term: string) => void;
   expandAll: () => void;
   collapseAll: () => void;
   areAllExpanded: () => boolean;
@@ -17,6 +20,8 @@ export const useTranscriptPanelStore = create<TranscriptPanelState>((set, get) =
   expandedSections: {},
 
   isCurrentTimeOutOfView: false,
+  urlFilterTerm: '',
+  setUrlFilterTerm: (urlFilterTerm) => set({ urlFilterTerm }),
   setIsCurrentTimeOutOfView: (value) => set({ isCurrentTimeOutOfView: value }),
 
   targetScrollTime: null,

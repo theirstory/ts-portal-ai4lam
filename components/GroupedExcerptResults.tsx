@@ -11,6 +11,7 @@ import { Chunks } from '@/types/weaviate';
 import { colors } from '@/lib/theme';
 import { normalizeTimedNerData } from '@/types/ner';
 import { getMuxThumbnailUrl } from '@/lib/muxThumbnail';
+import { ENTITY_HIGHLIGHT_COLOR, FILTER_HIGHLIGHT_COLOR } from '@/lib/highlightColors';
 
 export type ExcerptGroupingSource = Partial<Chunks>;
 
@@ -38,9 +39,7 @@ const formatTimestamp = (seconds?: number) => {
   return hours ? `${hours}:${pad(minutes)}:${pad(secs)}` : `${pad(minutes)}:${pad(secs)}`;
 };
 
-/** Marks entity mentions; the narrowing term gets its own colour. */
-const HIGHLIGHT_COLOR = '#fde047';
-const FILTER_HIGHLIGHT_COLOR = '#a5d8ff';
+
 
 type HighlightPart = { text: string; kind: 'none' | 'entity' | 'filter' };
 
@@ -232,6 +231,8 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
     if (typeof excerpt.start_time === 'number') params.set('start', String(excerpt.start_time));
     if (typeof excerpt.end_time === 'number') params.set('end', String(excerpt.end_time));
     if (nerFilterParam) params.set('nerFilters', nerFilterParam);
+    // So the transcript can mark the same term the reader was filtering on.
+    if (filterTerm) params.set('highlight', filterTerm);
     router.push(`/story/${recordingId}?${params.toString()}`);
   };
 
@@ -349,7 +350,7 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                               key={partIndex}
                               component="mark"
                               sx={{
-                                bgcolor: part.kind === 'filter' ? FILTER_HIGHLIGHT_COLOR : HIGHLIGHT_COLOR,
+                                bgcolor: part.kind === 'filter' ? FILTER_HIGHLIGHT_COLOR : ENTITY_HIGHLIGHT_COLOR,
                                 color: 'inherit',
                                 px: 0.25,
                                 borderRadius: '2px',

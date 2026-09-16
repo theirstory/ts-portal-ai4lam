@@ -3,6 +3,7 @@ import { Box } from '@mui/material';
 import { keyframes } from '@emotion/react';
 import usePlayerStore from '@/app/stores/usePlayerStore';
 import { Word } from '@/types/transcription';
+import { FILTER_HIGHLIGHT_COLOR } from '@/lib/highlightColors';
 import { colors } from '@/lib/theme';
 import { useTranscriptNavigation } from '@/app/hooks/useTranscriptNavigation';
 
@@ -11,6 +12,7 @@ type Props = {
   nextWordStart?: number;
   hasTraditionalHighlight: boolean;
   isTraditionalMatch: boolean;
+  isUrlFilterMatch?: boolean;
   isCurrentTraditionalMatch: boolean;
   isInCurrentSemanticMatch: boolean;
   urlHighlightRange: { start: number; end: number } | null;
@@ -30,6 +32,7 @@ export const StoryTranscriptWord = memo(
     nextWordStart,
     hasTraditionalHighlight,
     isTraditionalMatch,
+    isUrlFilterMatch = false,
     isCurrentTraditionalMatch,
     isInCurrentSemanticMatch,
     urlHighlightRange,
@@ -68,7 +71,11 @@ export const StoryTranscriptWord = memo(
           userSelect: 'text',
           backgroundColor: isCurrent
             ? colors.warning.main
-            : hasTraditionalHighlight
+            : // The term the reader filtered results by, in the same blue it
+              // carried in the results list, so the mark is recognisable.
+              isUrlFilterMatch
+              ? FILTER_HIGHLIGHT_COLOR
+              : hasTraditionalHighlight
               ? isCurrentTraditionalMatch
                 ? colors.primary.main
                 : isTraditionalMatch
@@ -77,8 +84,10 @@ export const StoryTranscriptWord = memo(
               : isInCurrentSemanticMatch
                 ? colors.info.light
                 : 'transparent',
-          color: isCurrentTraditionalMatch
-            ? colors.common.white
+          color: isUrlFilterMatch
+            ? colors.text.primary
+            : isCurrentTraditionalMatch
+              ? colors.common.white
             : isCurrent || isPast
               ? colors.text.primary
               : colors.text.disabled,

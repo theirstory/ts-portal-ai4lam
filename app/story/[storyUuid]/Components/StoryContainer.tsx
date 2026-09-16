@@ -12,6 +12,7 @@ import { StoryProgressBar } from './StoryProgressBar';
 import { colors } from '@/lib/theme';
 import { SearchType } from '@/types/searchType';
 import { useTranscriptNavigation } from '@/app/hooks/useTranscriptNavigation';
+import { useTranscriptPanelStore } from '@/app/stores/useTranscriptPanelStore';
 
 export const StoryContainer = ({ storyUuid }: { storyUuid: string }) => {
   const theme = useTheme();
@@ -30,6 +31,7 @@ export const StoryContainer = ({ storyUuid }: { storyUuid: string }) => {
   } = useSemanticSearchStore();
   const { seekAndScroll } = useTranscriptNavigation();
   const searchParams = useSearchParams();
+  const setUrlFilterTerm = useTranscriptPanelStore((state) => state.setUrlFilterTerm);
 
   useEffect(() => {
     setSearchType(SearchType.traditional);
@@ -64,6 +66,11 @@ export const StoryContainer = ({ storyUuid }: { storyUuid: string }) => {
     const startTime = searchParams.get('start');
     const nerLabel = searchParams.get('nerLabel');
     const nerFilters = searchParams.get('nerFilters');
+    const highlight = searchParams.get('highlight');
+
+    // Carries over the term the reader was filtering results by, so the
+    // transcript marks the same words they clicked through on.
+    setUrlFilterTerm(highlight ?? '');
 
     if (startTime) {
       const time = parseFloat(startTime);
@@ -89,7 +96,7 @@ export const StoryContainer = ({ storyUuid }: { storyUuid: string }) => {
       const mergedLabels = Array.from(new Set([...selected_ner_labels, ...filterArray]));
       setSelectedNerLabels(mergedLabels as any);
     }
-  }, [transcriptData, searchParams, seekAndScroll, setUpdateSelectedNerLabel, setSelectedNerLabels]);
+  }, [transcriptData, searchParams, seekAndScroll, setUpdateSelectedNerLabel, setSelectedNerLabels, setUrlFilterTerm]);
 
   const handleMobileTabChange = (event: React.SyntheticEvent, newValue: number) => {
     setMobileTabValue(newValue);

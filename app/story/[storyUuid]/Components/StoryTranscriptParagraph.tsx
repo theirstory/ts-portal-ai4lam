@@ -59,6 +59,7 @@ export const StoryTranscriptParagraph = memo(
 
     const isCurrentTimeOutOfView = useTranscriptPanelStore((state) => state.isCurrentTimeOutOfView);
     const targetScrollTime = useTranscriptPanelStore((state) => state.targetScrollTime);
+    const urlFilterTerm = useTranscriptPanelStore((state) => state.urlFilterTerm);
     const setTargetScrollTime = useTranscriptPanelStore((state) => state.setTargetScrollTime);
 
     /**
@@ -111,6 +112,43 @@ export const StoryTranscriptParagraph = memo(
 
       return matches;
     }, [hasSelectedNerLabels, ner_data, selectedNerLabelSet, wordsInParagraph]);
+
+    /**
+     * Word indexes covered by the term carried over from the results filter.
+     *
+     * Matched over the joined text rather than word by word, because a filter
+     * like "word error rate" spans several words and matching each separately
+     * would light up every unrelated "word" in the transcript.
+     */
+    const urlFilterMatchSet = useMemo(() => {
+      const term = urlFilterTerm.trim().toLowerCase();
+      if (term.length < 2 || wordsInParagraph.length === 0) return new Set<number>();
+
+      // Offsets of each word within the joined text, so a match maps back to
+      // the words it covers.
+      const spans: { start: number; end: number; index: number }[] = [];
+      let cursor = 0;
+      wordsInParagraph.forEach((word: any, index: number) => {
+        const text = String(word.text ?? '');
+        if (index > 0) cursor += 1;
+        spans.push({ start: cursor, end: cursor + text.length, index });
+        cursor += text.length;
+      });
+
+      const haystack = wordsInParagraph.map((word: any) => String(word.text ?? '')).join(' ').toLowerCase();
+      const matches = new Set<number>();
+      let from = 0;
+      for (;;) {
+        const found = haystack.indexOf(term, from);
+        if (found === -1) break;
+        const until = found + term.length;
+        spans.forEach((span) => {
+          if (span.end > found && span.start < until) matches.add(span.index);
+        });
+        from = until;
+      }
+      return matches;
+    }, [urlFilterTerm, wordsInParagraph]);
 
     const traditionalMatchSet = useMemo(
       () => new Set(traditionalSearchMatches.map((match) => getWordKey(match))),
@@ -392,6 +430,7 @@ export const StoryTranscriptParagraph = memo(
                   isTraditionalMatch={isTraditionalMatch}
                   isCurrentTraditionalMatch={isCurrentTraditionalMatch}
                   isInCurrentSemanticMatch={isInCurrentSemanticMatch}
+                  isUrlFilterMatch={urlFilterMatchSet.has(wordIndex)}
                   urlHighlightRange={urlHighlightRange}
                 />
               </React.Fragment>
