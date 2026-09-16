@@ -189,6 +189,9 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
         inputProps={{ 'aria-label': 'Filter the results shown' }}
         sx={{ flex: 1, minWidth: 220, maxWidth: 420 }}
         InputProps={{
+          // Matches the search field above it, so the two read as inputs of the
+          // same kind rather than one appearing disabled against the page.
+          style: { backgroundColor: colors.background.default },
           startAdornment: (
             <InputAdornment position="start">
               <FilterAltOutlinedIcon fontSize="small" sx={{ color: 'text.disabled' }} />
