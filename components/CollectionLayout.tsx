@@ -12,6 +12,7 @@ import { GridView } from './GridView';
 import { SearchTable } from './SearchTable';
 import { SearchBox } from './SearchBox';
 import { RecordingsFilterSidebar } from './RecordingsFilterSidebar';
+import { GroupedExcerptResults } from './GroupedExcerptResults';
 import { ActiveFiltersDisplay } from './ActiveFiltersDisplay';
 import { Pagination } from './Pagination';
 import { NoInterviewsMessage } from './NoInterviewsMessage';
@@ -19,7 +20,16 @@ import { colors } from '@/lib/theme';
 import useLayoutState from '@/app/stores/useLayout';
 
 export default function CollectionLayout() {
-  const { loading: semanticSearchLoading, stories, result, currentPage, hasSearched } = useSemanticSearchStore();
+  const {
+    loading: semanticSearchLoading,
+    stories,
+    result,
+    currentPage,
+    hasSearched,
+    selectedNerEntities,
+    nerExcerpts,
+    nerExcerptsLoading,
+  } = useSemanticSearchStore();
   const { setTopBarCollapsedAuto } = useLayoutState();
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
 
@@ -98,11 +108,40 @@ export default function CollectionLayout() {
             </Box>
           )}
 
+          {/* Entity excerpts — selecting an entity asks about moments, so the
+              results become the passages mentioning it, grouped by recording. */}
+          {!semanticSearchLoading && selectedNerEntities.length > 0 && (
+            <Box
+              sx={{
+                flex: { xs: 'unset', md: 1 },
+                minHeight: { xs: 'calc(100vh - 475px)', md: 0 },
+                overflow: 'auto',
+                pr: { xs: 0, md: 1 },
+                pb: { xs: 1, md: 2 },
+              }}>
+              {nerExcerptsLoading ? (
+                <Box display="flex" justifyContent="center" sx={{ py: 6 }}>
+                  <CircularProgress size="40px" />
+                </Box>
+              ) : (
+                <GroupedExcerptResults
+                  excerpts={nerExcerpts}
+                  highlightTerms={selectedNerEntities.map((entity) => entity.text)}
+                  nerFilterParam={[...new Set(selectedNerEntities.map((entity) => entity.label))].join(',')}
+                  emptyMessage="No excerpts mention the selected entities."
+                />
+              )}
+            </Box>
+          )}
+
           {/* Semantic Search Results */}
-          {!semanticSearchLoading && hasSearched && results.length > 0 && <SearchTable />}
+          {!semanticSearchLoading && selectedNerEntities.length === 0 && hasSearched && results.length > 0 && (
+            <SearchTable />
+          )}
 
           {/* Show List/Grid View By Default (No Search) */}
           {!semanticSearchLoading &&
+            selectedNerEntities.length === 0 &&
             !hasSearched &&
             storiesTestimonies?.objects &&
             storiesTestimonies?.objects.length > 0 && (

@@ -1220,3 +1220,72 @@ export async function getStoriesCountFromCollection<T extends SchemaTypes>(
     return 0;
   }
 }
+
+const EXCERPT_RETURN_PROPS: QueryProperty<Chunks>[] = [
+  'theirstory_id',
+  'interview_title',
+  'recording_date',
+  'thumbnail_url',
+  'section_title',
+  'speaker',
+  'transcription',
+  'start_time',
+  'end_time',
+  'isAudioFile',
+];
+
+/**
+ * Chunk-level excerpts mentioning any of the selected entities.
+ *
+ * Filtering by entity is a question about moments, not whole recordings — the
+ * useful answer is "here is where this was discussed", so results are the
+ * passages themselves rather than the interviews containing them.
+ */
+export async function getExcerptsForNerEntities(
+  entities: { label: string; text: string }[],
+  collectionFilters?: string[],
+  folderFilters?: string[],
+  limit = 500,
+): Promise<{ excerpts: Partial<Chunks>[]; total: number }> {
+  if (entities.length === 0) return { excerpts: [], total: 0 };
+
+  const client = await initWeaviateClient();
+  const myCollection = client.collections.get<Chunks>('Chunks');
+  const byProperty = getByPropertyFilter(myCollection);
+
+  const filtersArray: FilterValue[] = [
+    byProperty('ner_text').containsAny(entities.map((entity) => entity.text.toLowerCase())),
+    byProperty('ner_labels').containsAny([...new Set(entities.map((entity) => entity.label))]),
+  ];
+  if (collectionFilters?.length) {
+    filtersArray.push(byProperty('collection_id').containsAny(collectionFilters));
+  }
+  if (folderFilters?.length) {
+    filtersArray.push(byProperty('folder_id').containsAny(folderFilters));
+  }
+  const combinedFilter: FilterValue = { operator: 'And', filters: filtersArray, value: true };
+
+  const wanted = new Set(entities.map((entity) => `${entity.label}:${entity.text.toLowerCase()}`));
+  const response = await myCollection.query.fetchObjects({
+    limit,
+    filters: combinedFilter,
+    returnProperties: [...EXCERPT_RETURN_PROPS, ...NER_DATA_RETURN_PROPS] as QueryProperty<Chunks>[],
+  });
+
+  // containsAny matches text and label independently, so confirm the pairing
+  // before treating a chunk as a hit for the selected entity.
+  const excerpts = response.objects
+    .map((chunk) => chunk.properties as Partial<Chunks>)
+    .filter((props) =>
+      normalizeTimedNerData(props?.ner_data).some((ner) =>
+        wanted.has(`${ner.label}:${ner.text.trim().toLowerCase()}`),
+      ),
+    )
+    .sort(
+      (a, b) =>
+        String(a.interview_title ?? '').localeCompare(String(b.interview_title ?? '')) ||
+        Number(a.start_time ?? 0) - Number(b.start_time ?? 0),
+    );
+
+  return { excerpts, total: excerpts.length };
+}

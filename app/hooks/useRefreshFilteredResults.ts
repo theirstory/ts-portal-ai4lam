@@ -30,6 +30,7 @@ export const useRefreshFilteredResults = () => {
     run25bmSearch,
     setCurrentPage,
     selectedNerEntities,
+    loadNerExcerpts,
   } = useSemanticSearchStore();
   const { minValue, maxValue } = useThreshold();
 
@@ -38,6 +39,10 @@ export const useRefreshFilteredResults = () => {
     nextNerEntities: NerEntityFilter[] = selectedNerEntities,
   ) => {
     setCurrentPage(1);
+
+    // Picking an entity is a question about moments, so the results become the
+    // passages mentioning it rather than the recordings containing it.
+    void loadNerExcerpts(nextNerEntities);
 
     if (!hasSearched) {
       // Browsing rather than searching: the recordings list is the result set,

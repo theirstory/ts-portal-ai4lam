@@ -11,6 +11,7 @@ import {
   getAvailableNerLabelStats,
   getNerEntityOptionsForLabel,
   getRecordingIdsForNerEntities,
+  getExcerptsForNerEntities,
   getStoriesCountFromCollection,
   getStoryByUuid,
   hybridSearch,
@@ -65,6 +66,10 @@ type SemanticSearchStore = {
   availableNerEntityCounts: Record<string, number>;
   /** Recordings matching the current filters, for real page counts. */
   storiesTotalCount: number;
+  /** Chunk-level excerpts for the selected entities, grouped by recording in the UI. */
+  nerExcerpts: Partial<Chunks>[];
+  nerExcerptsLoading: boolean;
+  loadNerExcerpts: (entities?: NerEntityFilter[]) => Promise<void>;
   /** Labels whose entity list is expanded in the sidebar. */
   expandedNerLabels: string[];
   toggleExpandedNerLabel: (label: string) => string[];
@@ -222,6 +227,8 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       availableNerLabelCounts: {},
       availableNerEntityCounts: {},
       storiesTotalCount: 0,
+      nerExcerpts: [],
+      nerExcerptsLoading: false,
       expandedNerLabels: [],
       availableNerLabelsLoaded: false,
       nerSearchTerm: '',
@@ -770,7 +777,26 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
         return next;
       },
 
-      clearNerEntities: () => set({ selectedNerEntities: [] }, false, 'clearNerEntities'),
+      clearNerEntities: () => set({ selectedNerEntities: [], nerExcerpts: [] }, false, 'clearNerEntities'),
+
+      loadNerExcerpts: async (entities) => {
+        const { selectedNerEntities, selectedCollectionIds, selectedFolderIds } = get();
+        const target = entities ?? selectedNerEntities;
+
+        if (!target.length) {
+          set({ nerExcerpts: [], nerExcerptsLoading: false }, false, 'loadNerExcerpts:empty');
+          return;
+        }
+
+        set({ nerExcerptsLoading: true }, false, 'loadNerExcerpts:start');
+        try {
+          const { excerpts } = await getExcerptsForNerEntities(target, selectedCollectionIds, selectedFolderIds);
+          set({ nerExcerpts: excerpts, nerExcerptsLoading: false }, false, 'loadNerExcerpts:success');
+        } catch (error) {
+          console.error('Error loading NER excerpts:', error);
+          set({ nerExcerpts: [], nerExcerptsLoading: false }, false, 'loadNerExcerpts:error');
+        }
+      },
 
       /** Returns the next expansion so callers can act without waiting a tick. */
       toggleExpandedNerLabel: (label) => {
