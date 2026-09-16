@@ -175,10 +175,11 @@ export async function getAllStoriesFromCollection<T extends SchemaTypes>(
   offset = 0,
   collectionFilters?: string[],
   folderFilters?: string[],
+  nerFilters?: string[],
 ) {
   const client = await initWeaviateClient();
   const myCollection = client.collections.get<SchemaMap[T]>(collection);
-  const combinedFilter = buildCombinedFilters(myCollection, undefined, collectionFilters, folderFilters);
+  const combinedFilter = buildCombinedFilters(myCollection, nerFilters, collectionFilters, folderFilters);
 
   const response = await myCollection.query.fetchObjects({
     limit,
@@ -1029,5 +1030,50 @@ async function getNerEntityOptionsForSearch({
     options: sortNerEntityOptions(entityMap),
     hasMore: chunksResponse.objects.length === sourceLimit,
     scannedCount: chunksResponse.objects.length,
+  };
+}
+
+/**
+ * NER labels that actually appear in the archive, with the number of
+ * recordings carrying each.
+ *
+ * config.json declares every label the portal could use, but a given archive
+ * may have no instances of some of them — offering those as checkable filters
+ * gives the user a control that can only ever return nothing.
+ */
+export async function getAvailableNerLabelStats(
+  batchSize = 500,
+): Promise<{ labels: string[]; counts: Record<string, number> }> {
+  const client = await initWeaviateClient();
+  const myCollection = client.collections.get<Testimonies>('Testimonies');
+  const counts: Record<string, number> = {};
+  let offset = 0;
+
+  for (;;) {
+    const response = await myCollection.query.fetchObjects({
+      limit: batchSize,
+      offset,
+      returnProperties: ['ner_labels'] as QueryProperty<Testimonies>[],
+    });
+
+    response.objects.forEach((item) => {
+      const labels = (item.properties as Partial<Testimonies> | undefined)?.ner_labels;
+      if (!Array.isArray(labels)) return;
+
+      // A recording counts once per label however many times it is mentioned.
+      new Set(
+        labels.filter((label): label is string => typeof label === 'string').map((label) => label.trim()),
+      ).forEach((label) => {
+        if (label) counts[label] = (counts[label] ?? 0) + 1;
+      });
+    });
+
+    if (response.objects.length < batchSize) break;
+    offset += response.objects.length;
+  }
+
+  return {
+    labels: Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b)),
+    counts,
   };
 }

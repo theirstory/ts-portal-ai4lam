@@ -8,6 +8,7 @@ import {
   getAvailableCollections,
   getAvailableFolders,
   getAllStoriesFromCollection,
+  getAvailableNerLabelStats,
   getNerEntityOptionsForLabel,
   getStoryByUuid,
   hybridSearch,
@@ -54,6 +55,12 @@ type SemanticSearchStore = {
   currentPage: number;
   hasNextStoriesPage: boolean;
   nerFilters: string[];
+  /** Labels that actually occur in the archive, most common first. */
+  availableNerLabels: string[];
+  /** Recordings carrying each label. */
+  availableNerLabelCounts: Record<string, number>;
+  availableNerLabelsLoaded: boolean;
+  loadAvailableNerLabels: () => Promise<void>;
   /** Free-text filter over the label list and loaded entity names. */
   nerSearchTerm: string;
   /** The single entity currently being browsed, if any. */
@@ -88,6 +95,7 @@ type SemanticSearchStore = {
     returnProperties?: QueryProperty<SchemaMap[T]>[] | undefined,
     limit?: number,
     offset?: number,
+    nerFilters?: string[],
   ) => Promise<void>;
   getStoryByUuid: (uuid: string) => Promise<void>;
   getStoryTranscriptByUuid: (uuid: string) => Promise<void>;
@@ -198,6 +206,9 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       currentPage: 1,
       hasNextStoriesPage: false,
       nerFilters: [],
+      availableNerLabels: [],
+      availableNerLabelCounts: {},
+      availableNerLabelsLoaded: false,
       nerSearchTerm: '',
       selectedNerEntity: null,
       nerEntityOptionsByLabel: {},
@@ -304,6 +315,9 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
         returnProperties?: QueryProperty<SchemaMap[T]>[] | undefined,
         limit = 100,
         offset = 0,
+        // Browsing by label narrows the recordings list itself; searching goes
+        // through the chunk searches instead.
+        nerFilters?: string[],
       ) => {
         const { selectedCollectionIds, selectedFolderIds } = get();
         set({ loading: true }, false, 'getAllStories:start');
@@ -315,6 +329,7 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
             offset,
             selectedCollectionIds,
             selectedFolderIds,
+            nerFilters,
           );
           let hasNextStoriesPage = false;
           if ((stories?.objects?.length ?? 0) === limit) {
@@ -686,6 +701,20 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       setCurrentPage: (page) => set({ currentPage: page }, false, 'setCurrentPage'),
 
       setNerFilters: (filters) => set({ nerFilters: filters }, false, 'setNerFilters'),
+
+      loadAvailableNerLabels: async () => {
+        if (get().availableNerLabelsLoaded) return;
+        try {
+          const { labels, counts } = await getAvailableNerLabelStats();
+          set(
+            { availableNerLabels: labels, availableNerLabelCounts: counts, availableNerLabelsLoaded: true },
+            false,
+            'loadAvailableNerLabels',
+          );
+        } catch (error) {
+          console.error('Error loading available NER labels:', error);
+        }
+      },
 
       setNerSearchTerm: (nerSearchTerm) => set({ nerSearchTerm }, false, 'setNerSearchTerm'),
 
