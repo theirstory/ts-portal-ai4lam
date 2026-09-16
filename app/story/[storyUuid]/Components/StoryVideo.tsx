@@ -10,15 +10,17 @@ import { throttle } from 'lodash';
 import { colors, theme } from '@/lib/theme';
 import { muxPlayerThemeProps } from '@/lib/theme/muxPlayerTheme';
 import { AudioFileWave } from '@/app/assets/svg/AudioFileWave';
+import { useStoryMuxCaptions } from './useStoryMuxCaptions';
 
 export const StoryVideo = () => {
-  const { storyHubPage } = useSemanticSearchStore();
+  const { storyHubPage, transcript } = useSemanticSearchStore();
   const { setIsPlaying, setPlayerRef, isPlaying, setCurrentTime, setDuration } = usePlayerStore();
 
   const videoRef = useRef<MuxPlayerElement>(null);
   const videoSrc = storyHubPage?.properties.video_url;
   const isAudioFile = storyHubPage?.properties.isAudioFile || false;
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'));
+  const captionsTrack = useStoryMuxCaptions(transcript?.sections);
 
   // Throttle the setCurrentTime to avoid performance issues
   const throttledSetCurrentTime = useRef(
@@ -80,6 +82,9 @@ export const StoryVideo = () => {
         zIndex={2}
         sx={{ background: 'transparent' }}>
         <MuxPlayer
+          // Remount when the captions change, so the player picks up the new
+          // track. The key is a short hash, not the VTT itself.
+          key={`${videoSrc ?? 'empty'}-${captionsTrack?.key ?? 'no-captions'}`}
           autoPlay={isMobile} // this is important because will break the word highlighting if the user has to manually start the video on mobile
           ref={videoRef}
           src={videoSrc}
@@ -147,8 +152,11 @@ export const StoryVideo = () => {
             enableWorker: true, // Enable web worker
             fragLoadingTimeOut: 20000, // 20s timeout
             manifestLoadingTimeOut: 10000, // 10s timeout
-          }}
-        />
+          }}>
+          {captionsTrack && (
+            <track key={captionsTrack.key} kind="captions" label="English" srcLang="en" src={captionsTrack.src} />
+          )}
+        </MuxPlayer>
       </Box>
     </Box>
   );
