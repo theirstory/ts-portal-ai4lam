@@ -46,8 +46,14 @@ services:
         condition: service_healthy
     volumes:
       - .:/app
-      - node_modules:/app/node_modules
-    command: sh -c "yarn weaviate:generate-schemas && yarn weaviate:import && exit 0"
+      # nocopy: frontend populates this shared volume. Copying from two
+      # containers at once races and fails with "mkdir .../deepmerge: file exists".
+      - type: volume
+        source: node_modules
+        target: /app/node_modules
+        volume:
+          nocopy: true
+    command: sh -c "if [ ! -d node_modules/next ]; then yarn install --immutable; fi && yarn weaviate:generate-schemas && yarn weaviate:import && exit 0"
     restart: "no"
   
   nlp-processor:
