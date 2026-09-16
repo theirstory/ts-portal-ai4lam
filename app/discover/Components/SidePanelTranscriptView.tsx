@@ -23,6 +23,7 @@ import { TextSelectionPopover } from './TextSelectionPopover';
 import { TranscriptSection } from './transcript/TranscriptSection';
 import { TranscriptSearchBar } from './transcript/TranscriptSearchBar';
 import { SearchMode, ThematicMatch, TranscriptData } from './transcript/transcriptTypes';
+import { useStoryMuxCaptions } from '@/app/story/[storyUuid]/Components/useStoryMuxCaptions';
 
 /** Merge overlapping / near-adjacent thematic matches so researchers see distinct passages. */
 function mergeThematicMatches(matches: ThematicMatch[], gapSeconds = 2): ThematicMatch[] {
@@ -79,6 +80,7 @@ export const SidePanelTranscriptView = () => {
   const [thematicSearched, setThematicSearched] = useState(false);
   const [activeThematicIndex, setActiveThematicIndex] = useState(0);
   const videoRef = useRef<MuxPlayerElement>(null);
+  const captionsTrack = useStoryMuxCaptions(data?.transcription?.sections);
   const transcriptContainerRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
 
@@ -398,6 +400,9 @@ export const SidePanelTranscriptView = () => {
           {/* Video player — compact */}
           <Box sx={{ flexShrink: 0, bgcolor: colors.common.black }}>
             <MuxPlayer
+              // Remount when the captions change, so the player picks up the
+              // new track. The key is a short hash, not the VTT itself.
+              key={`${data.videoUrl ?? 'empty'}-${captionsTrack?.key ?? 'no-captions'}`}
               ref={videoRef}
               src={data.videoUrl}
               audio={data.isAudioFile}
@@ -406,8 +411,11 @@ export const SidePanelTranscriptView = () => {
               backwardSeekOffset={10}
               accentColor={muxPlayerThemeProps.accentColor}
               onTimeUpdate={handleTimeUpdate}
-              style={{ ...muxPlayerThemeProps.style, aspectRatio: data.isAudioFile ? 'auto' : '21/9' }}
-            />
+              style={{ ...muxPlayerThemeProps.style, aspectRatio: data.isAudioFile ? 'auto' : '21/9' }}>
+              {captionsTrack && (
+                <track key={captionsTrack.key} kind="captions" label="English" srcLang="en" src={captionsTrack.src} />
+              )}
+            </MuxPlayer>
           </Box>
 
           <TranscriptSearchBar
