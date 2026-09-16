@@ -8,6 +8,7 @@ import {
   getAvailableCollections,
   getAvailableFolders,
   getAllStoriesFromCollection,
+  getNerEntityOptionsForLabel,
   getStoryByUuid,
   hybridSearch,
   hybridSearchForStoryId,
@@ -17,9 +18,21 @@ import {
   type FolderFilterOption,
 } from '@/lib/weaviate/search';
 import { Chunks, Testimonies, SchemaMap, SchemaTypes } from '@/types/weaviate';
-import { NerLabel } from '@/types/ner';
+import { NerEntityFilter, NerEntityOption, NerLabel } from '@/types/ner';
+import { NER_ENTITY_DISPLAY_PAGE_SIZE } from '@/app/constants';
 import { SearchType } from '@/types/searchType';
 import { Transcription, Word } from '@/types/transcription';
+
+// Entity option requests race when a user checks labels quickly; only the
+// latest request per label may write its results.
+const nerEntityOptionRequestIds = new Map<string, number>();
+const nextNerEntityOptionRequestId = (label: string) => {
+  const next = (nerEntityOptionRequestIds.get(label) ?? 0) + 1;
+  nerEntityOptionRequestIds.set(label, next);
+  return next;
+};
+const isLatestNerEntityOptionRequest = (label: string, requestId: number) =>
+  nerEntityOptionRequestIds.get(label) === requestId;
 
 type SemanticSearchStore = {
   hasSearched: boolean;
@@ -41,6 +54,19 @@ type SemanticSearchStore = {
   currentPage: number;
   hasNextStoriesPage: boolean;
   nerFilters: string[];
+  /** Free-text filter over the label list and loaded entity names. */
+  nerSearchTerm: string;
+  /** The single entity currently being browsed, if any. */
+  selectedNerEntity: NerEntityFilter | null;
+  nerEntityOptionsByLabel: Record<string, NerEntityOption[]>;
+  nerEntityOptionsHasMoreByLabel: Record<string, boolean>;
+  nerEntityOptionsLoadingByLabel: Record<string, boolean>;
+  nerEntityOptionsOffsetByLabel: Record<string, number>;
+  /** How many of a label's loaded entities are shown before "Show more". */
+  nerEntityOptionsVisibleCountByLabel: Record<string, number>;
+  setNerSearchTerm: (term: string) => void;
+  setSelectedNerEntity: (entity: NerEntityFilter | null) => void;
+  loadNerEntityOptions: (label: string, append?: boolean) => Promise<void>;
   collections: CollectionFilterOption[];
   folders: FolderFilterOption[];
   selectedCollectionIds: string[];
@@ -172,6 +198,13 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       currentPage: 1,
       hasNextStoriesPage: false,
       nerFilters: [],
+      nerSearchTerm: '',
+      selectedNerEntity: null,
+      nerEntityOptionsByLabel: {},
+      nerEntityOptionsHasMoreByLabel: {},
+      nerEntityOptionsLoadingByLabel: {},
+      nerEntityOptionsOffsetByLabel: {},
+      nerEntityOptionsVisibleCountByLabel: {},
       collections: [],
       folders: [],
       selectedCollectionIds: [],
@@ -653,6 +686,119 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       setCurrentPage: (page) => set({ currentPage: page }, false, 'setCurrentPage'),
 
       setNerFilters: (filters) => set({ nerFilters: filters }, false, 'setNerFilters'),
+
+      setNerSearchTerm: (nerSearchTerm) => set({ nerSearchTerm }, false, 'setNerSearchTerm'),
+
+      setSelectedNerEntity: (selectedNerEntity) =>
+        set({ selectedNerEntity }, false, 'setSelectedNerEntity'),
+
+      /**
+       * Loads the distinct entities recorded under one label. `append` drives
+       * the "Show more" control: it first reveals entities already fetched but
+       * not yet displayed, and only goes back to the server once those run out.
+       */
+      loadNerEntityOptions: async (label: string, append = false) => {
+        const {
+          nerEntityOptionsLoadingByLabel,
+          nerEntityOptionsOffsetByLabel,
+          nerEntityOptionsByLabel,
+          nerEntityOptionsVisibleCountByLabel,
+          selectedCollectionIds,
+        } = get();
+        if (nerEntityOptionsLoadingByLabel[label]) return;
+
+        if (append) {
+          const stored = nerEntityOptionsByLabel[label] ?? [];
+          const visibleCount = nerEntityOptionsVisibleCountByLabel[label] ?? NER_ENTITY_DISPLAY_PAGE_SIZE;
+          if (visibleCount < stored.length) {
+            set(
+              {
+                nerEntityOptionsVisibleCountByLabel: {
+                  ...nerEntityOptionsVisibleCountByLabel,
+                  [label]: visibleCount + NER_ENTITY_DISPLAY_PAGE_SIZE,
+                },
+              },
+              false,
+              'loadNerEntityOptions:reveal',
+            );
+            return;
+          }
+        }
+
+        const offset = append ? (nerEntityOptionsOffsetByLabel[label] ?? 0) : 0;
+        const requestId = nextNerEntityOptionRequestId(label);
+        set(
+          {
+            nerEntityOptionsLoadingByLabel: { ...nerEntityOptionsLoadingByLabel, [label]: true },
+          },
+          false,
+          'loadNerEntityOptions:start',
+        );
+
+        try {
+          const response = await getNerEntityOptionsForLabel({
+            label,
+            collectionFilters: selectedCollectionIds,
+            offset,
+          });
+          // A slower earlier request must not overwrite a newer one's results.
+          if (!isLatestNerEntityOptionRequest(label, requestId)) return;
+
+          const currentOptions = append ? (get().nerEntityOptionsByLabel[label] ?? []) : [];
+          const merged = new Map<string, NerEntityOption>();
+
+          // count/recordingCount are already global rather than per-batch, so a
+          // repeated key is the same entity resurfacing — overwrite, don't sum.
+          [...currentOptions, ...response.options].forEach((option) => {
+            merged.set(`${option.label}:${option.text.toLowerCase()}`, option);
+          });
+
+          const currentVisibleCount =
+            get().nerEntityOptionsVisibleCountByLabel[label] ?? NER_ENTITY_DISPLAY_PAGE_SIZE;
+
+          set(
+            {
+              nerEntityOptionsByLabel: {
+                ...get().nerEntityOptionsByLabel,
+                [label]: [...merged.values()].sort(
+                  (a, b) => b.count - a.count || a.text.localeCompare(b.text),
+                ),
+              },
+              nerEntityOptionsHasMoreByLabel: {
+                ...get().nerEntityOptionsHasMoreByLabel,
+                [label]: response.hasMore,
+              },
+              nerEntityOptionsOffsetByLabel: {
+                ...get().nerEntityOptionsOffsetByLabel,
+                [label]: offset + response.scannedCount,
+              },
+              nerEntityOptionsVisibleCountByLabel: {
+                ...get().nerEntityOptionsVisibleCountByLabel,
+                [label]: append ? currentVisibleCount + NER_ENTITY_DISPLAY_PAGE_SIZE : NER_ENTITY_DISPLAY_PAGE_SIZE,
+              },
+              nerEntityOptionsLoadingByLabel: {
+                ...get().nerEntityOptionsLoadingByLabel,
+                [label]: false,
+              },
+            },
+            false,
+            'loadNerEntityOptions:success',
+          );
+        } catch (error) {
+          console.error('Error loading NER entity options:', error);
+          if (!isLatestNerEntityOptionRequest(label, requestId)) return;
+          set(
+            {
+              nerEntityOptionsLoadingByLabel: {
+                ...get().nerEntityOptionsLoadingByLabel,
+                [label]: false,
+              },
+            },
+            false,
+            'loadNerEntityOptions:error',
+          );
+        }
+      },
 
       clearStore: () =>
         set(
