@@ -3,37 +3,15 @@
 import { useEffect } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
-import { SchemaTypes } from '@/types/weaviate';
-import { PAGINATION_ITEMS_PER_PAGE } from '@/app/constants';
+import { useRecordingsUrlState } from '@/app/hooks/useRecordingsUrlState';
 import CollectionLayout from './CollectionLayout';
 
-const STORIES_RETURN_PROPERTIES = [
-  'interview_title',
-  'interview_description',
-  'interview_duration',
-  'ner_labels',
-  'isAudioFile',
-  'video_url',
-  'collection_id',
-  'collection_name',
-  'collection_description',
-] as const;
 
 export const RecordingsPage = () => {
   const searchParams = useSearchParams();
   const collectionId = searchParams.get('collection');
 
-  const {
-    getAllStories,
-    loadCollections,
-    loadFolders,
-    setSelectedCollectionIds,
-    setSelectedFolderIds,
-    setCurrentPage,
-    clearSearch,
-    setHasSearched,
-    setSearchTerm,
-  } = useSemanticSearchStore();
+  const { loadCollections, loadFolders, setCurrentPage, setSelectedFolderIds } = useSemanticSearchStore();
 
   useEffect(() => {
     loadCollections();
@@ -41,23 +19,14 @@ export const RecordingsPage = () => {
   }, [loadCollections, loadFolders]);
 
   useEffect(() => {
-    clearSearch();
-    setHasSearched(false);
-    setSearchTerm('');
     setCurrentPage(1);
     setSelectedFolderIds([]);
-    setSelectedCollectionIds(collectionId ? [collectionId] : []);
-    getAllStories(SchemaTypes.Testimonies, [...STORIES_RETURN_PROPERTIES], PAGINATION_ITEMS_PER_PAGE, 0);
-  }, [
-    collectionId,
-    clearSearch,
-    getAllStories,
-    setCurrentPage,
-    setHasSearched,
-    setSearchTerm,
-    setSelectedCollectionIds,
-    setSelectedFolderIds,
-  ]);
+  }, [collectionId, setCurrentPage, setSelectedFolderIds]);
+
+  // Owns restoring from the URL and keeping it in step, including the initial
+  // listing — this component no longer clears and refetches on mount, which
+  // would have wiped anything a shared link was trying to restore.
+  useRecordingsUrlState();
 
   return <CollectionLayout />;
 };

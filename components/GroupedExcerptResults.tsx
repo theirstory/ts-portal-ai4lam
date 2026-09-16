@@ -7,6 +7,7 @@ import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import ClearIcon from '@mui/icons-material/Clear';
 import { useRouter } from 'next/navigation';
+import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 import { Chunks } from '@/types/weaviate';
 import { colors } from '@/lib/theme';
 import { normalizeTimedNerData } from '@/types/ner';
@@ -122,7 +123,9 @@ interface Props {
 export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilterParam, emptyMessage }: Props) => {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
-  const [resultsFilter, setResultsFilter] = useState('');
+  // Held in the store rather than locally so it survives in a shared URL.
+  const resultsFilter = useSemanticSearchStore((state) => state.resultsFilterTerm);
+  const setResultsFilter = useSemanticSearchStore((state) => state.setResultsFilterTerm);
 
   const filterTerm = resultsFilter.trim();
   // Narrowing happens over the excerpts already on screen rather than by

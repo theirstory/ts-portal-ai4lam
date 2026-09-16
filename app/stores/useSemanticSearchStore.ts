@@ -66,6 +66,9 @@ type SemanticSearchStore = {
   availableNerEntityCounts: Record<string, number>;
   /** Recordings matching the current filters, for real page counts. */
   storiesTotalCount: number;
+  /** Narrows the excerpts already on screen. In the store so it can be shared by URL. */
+  resultsFilterTerm: string;
+  setResultsFilterTerm: (term: string) => void;
   /** Chunk-level excerpts for the selected entities, grouped by recording in the UI. */
   nerExcerpts: Partial<Chunks>[];
   nerExcerptsLoading: boolean;
@@ -88,6 +91,8 @@ type SemanticSearchStore = {
   nerEntityOptionsVisibleCountByLabel: Record<string, number>;
   setNerSearchTerm: (term: string) => void;
   toggleNerEntity: (entity: NerEntityFilter) => NerEntityFilter[];
+  /** Replaces the whole selection, e.g. when restoring from a shared URL. */
+  setSelectedNerEntities: (entities: NerEntityFilter[]) => void;
   clearNerEntities: () => void;
   loadNerEntityOptions: (label: string, append?: boolean, minValue?: number, maxValue?: number) => Promise<void>;
   collections: CollectionFilterOption[];
@@ -227,6 +232,7 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       availableNerLabelCounts: {},
       availableNerEntityCounts: {},
       storiesTotalCount: 0,
+      resultsFilterTerm: '',
       nerExcerpts: [],
       nerExcerptsLoading: false,
       expandedNerLabels: [],
@@ -776,6 +782,11 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
         set({ selectedNerEntities: next }, false, 'toggleNerEntity');
         return next;
       },
+
+      setResultsFilterTerm: (resultsFilterTerm) => set({ resultsFilterTerm }, false, 'setResultsFilterTerm'),
+
+      setSelectedNerEntities: (selectedNerEntities) =>
+        set({ selectedNerEntities }, false, 'setSelectedNerEntities'),
 
       clearNerEntities: () => set({ selectedNerEntities: [], nerExcerpts: [] }, false, 'clearNerEntities'),
 
