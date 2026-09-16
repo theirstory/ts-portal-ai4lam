@@ -51,6 +51,21 @@ class Config:
     # on long transcripts: low | medium | high | xhigh | max
     NER_EFFORT = os.getenv("NER_EFFORT", "").strip()
     MIN_TEXT_LENGTH_FOR_NER = int(os.getenv("MIN_TEXT_LENGTH_FOR_NER", "50"))
+    # Terms that must never be indexed as a browsable entity, whatever the
+    # transcript says. Unlike NER_STOPLIST (which drops generic single words
+    # like "web"), this matches a token anywhere in a surface form, so a
+    # mis-transcription cannot surface a slur as a multi-word entity such as
+    # "<slur> guidelines". Speech-to-text mangles proper nouns into offensive
+    # words often enough that the archive needs a floor that does not depend on
+    # transcript quality. Terms are matched case-insensitively per token.
+    NER_BLOCKLIST = {
+        term.strip().lower()
+        for term in os.getenv(
+            "NER_BLOCKLIST",
+            "faggot,faggy,fag,nigger,nigga,retard,retarded,tranny,spic,kike,wetback,chink,gook,dyke",
+        ).split(",")
+        if term.strip()
+    }
     # Single-word surface forms to never treat as entities. The prompt asks the
     # model to skip generic nouns, but a few slip through on every run, so the
     # archive's own noise words are filtered deterministically instead.
@@ -116,6 +131,7 @@ class Config:
         print(f"[Config] NER effort: {cls.NER_EFFORT or '(api default)'}")
         print(f"[Config] Min text length for NER: {cls.MIN_TEXT_LENGTH_FOR_NER}")
         print(f"[Config] NER stoplist terms: {len(cls.NER_STOPLIST)}")
+        print(f"[Config] NER blocklist terms: {len(cls.NER_BLOCKLIST)}")
         print(f"[Config] Weaviate URL: {cls.WEAVIATE_URL}")
         print(f"[Config] Embedding model: {cls.EMBEDDING_MODEL}")
         print(f"[Config] Use GPU: {cls.USE_GPU}")

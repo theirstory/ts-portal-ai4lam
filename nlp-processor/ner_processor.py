@@ -375,6 +375,14 @@ def locate_occurrences(
             if len(form_tokens) == 1 and form_tokens[0] in Config.NER_STOPLIST:
                 continue
 
+            # Never index a form containing a blocked term, at any position.
+            # Speech-to-text mangles proper nouns into slurs ("FADGI guidelines"
+            # came through as "<slur> guidelines"), and entity browsing puts
+            # those in the sidebar as prominent, clickable terms.
+            if any(token in Config.NER_BLOCKLIST for token in form_tokens):
+                logger.info("[NER] Dropped blocked surface form for label=%s", entity.label)
+                continue
+
             case_sensitive = len(form_tokens) == 1 and is_acronym_form(surface)
 
             # A lowercase pronoun is never an entity mention. Acronyms that merely
