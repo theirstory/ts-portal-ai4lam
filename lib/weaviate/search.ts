@@ -2,6 +2,7 @@
 import { Chunks, Testimonies, SchemaMap, SchemaTypes } from '@/types/weaviate';
 import { initWeaviateClient } from './client';
 import { FilterValue, QueryProperty } from 'weaviate-client';
+import { NerEntityOption, normalizeTimedNerData } from '@/types/ner';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -681,4 +682,203 @@ export async function getNerEntityRecordingCounts(
   }
 
   return result;
+}
+
+/* --------------------------------------------------- NER entity browsing */
+
+// ner_data is an object[] in the schema, so it has to be requested in the
+// nested form. Asking for it as a bare property name fails at the gRPC layer
+// with "creating primitive value for ner_data".
+const NER_DATA_RETURN_PROPS = [
+  { name: 'ner_data', properties: ['text', 'label', 'start_time', 'end_time'] },
+] as unknown as QueryProperty<Testimonies>[];
+const NER_ENTITY_CHUNK_TEXT_PROPS: QueryProperty<Chunks>[] = ['ner_text', 'theirstory_id'];
+
+/** Testimonies scanned per batch while discovering the entities for a label. */
+const NER_ENTITY_SOURCE_BATCH_SIZE = 500;
+/** Safety net for pathologically large portals, not the normal case. */
+const NER_ENTITY_MAX_SCAN_BATCHES = 10;
+const NER_ENTITY_CHUNK_COUNT_BATCH_SIZE = 500;
+
+type NerEntityAccumulator = NerEntityOption & { recordingIds: Set<string> };
+
+function addNerEntityOption(
+  map: Map<string, NerEntityAccumulator>,
+  text: string,
+  label: string,
+  recordingId: string,
+) {
+  const normalizedText = text.trim();
+  if (!normalizedText) return;
+
+  const key = `${label}:${normalizedText.toLowerCase()}`;
+  const existing = map.get(key);
+  if (existing) {
+    existing.count += 1;
+    existing.recordingIds.add(recordingId);
+    existing.recordingCount = existing.recordingIds.size;
+    return;
+  }
+
+  map.set(key, {
+    text: normalizedText,
+    label,
+    count: 1,
+    recordingCount: 1,
+    recordingIds: new Set([recordingId]),
+  });
+}
+
+function sortNerEntityOptions(map: Map<string, NerEntityAccumulator>): NerEntityOption[] {
+  return [...map.values()]
+    .map(({ text, label, count, recordingCount }) => ({ text, label, count, recordingCount }))
+    .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text));
+}
+
+/**
+ * The testimony scan tells us which entities exist, but its counts are per
+ * testimony-level ner_data entry. The sidebar shows how many excerpts a user
+ * will actually get back, so counts are recomputed against Chunks.
+ */
+async function countChunkMatchesForEntityOptions(
+  options: NerEntityOption[],
+  label: string,
+  collectionFilters?: string[],
+  folderFilters?: string[],
+): Promise<NerEntityOption[]> {
+  if (options.length === 0) return options;
+
+  const client = await initWeaviateClient();
+  const myCollection = client.collections.get<Chunks>('Chunks');
+  const byProperty = getByPropertyFilter(myCollection);
+  const optionByText = new Map(options.map((option) => [option.text.toLowerCase(), option]));
+
+  const filtersArray: FilterValue[] = [
+    byProperty('ner_labels').containsAny([label]),
+    byProperty('ner_text').containsAny([...optionByText.keys()]),
+  ];
+  if (collectionFilters?.length) {
+    filtersArray.push(byProperty('collection_id').containsAny(collectionFilters));
+  }
+  if (folderFilters?.length) {
+    filtersArray.push(byProperty('folder_id').containsAny(folderFilters));
+  }
+  const combinedFilter: FilterValue = { operator: 'And', filters: filtersArray, value: true };
+
+  const countsByText = new Map<string, { count: number; recordingIds: Set<string> }>();
+  let offset = 0;
+
+  for (;;) {
+    const response = await myCollection.query.fetchObjects({
+      limit: NER_ENTITY_CHUNK_COUNT_BATCH_SIZE,
+      offset,
+      filters: combinedFilter,
+      returnProperties: NER_ENTITY_CHUNK_TEXT_PROPS,
+    });
+
+    response.objects.forEach((chunk) => {
+      const properties = chunk.properties as Partial<Chunks> | undefined;
+      const nerText = properties?.ner_text;
+      if (!Array.isArray(nerText)) return;
+
+      const recordingId = properties?.theirstory_id ?? '';
+      // A chunk mentioning the same entity twice is still one excerpt.
+      const matchedTexts = new Set<string>();
+
+      nerText.forEach((value) => {
+        if (typeof value !== 'string') return;
+        const normalizedText = value.trim().toLowerCase();
+        if (optionByText.has(normalizedText)) matchedTexts.add(normalizedText);
+      });
+
+      matchedTexts.forEach((text) => {
+        const existing = countsByText.get(text) ?? { count: 0, recordingIds: new Set<string>() };
+        existing.count += 1;
+        if (recordingId) existing.recordingIds.add(recordingId);
+        countsByText.set(text, existing);
+      });
+    });
+
+    if (response.objects.length < NER_ENTITY_CHUNK_COUNT_BATCH_SIZE) break;
+    offset += NER_ENTITY_CHUNK_COUNT_BATCH_SIZE;
+  }
+
+  return options
+    .map((option) => {
+      const counts = countsByText.get(option.text.toLowerCase());
+      return {
+        ...option,
+        count: counts?.count ?? 0,
+        recordingCount: counts?.recordingIds.size ?? 0,
+      };
+    })
+    .filter((option) => option.count > 0)
+    .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text));
+}
+
+/**
+ * Distinct entities recorded under one NER label, with the number of excerpts
+ * and recordings each appears in — the list shown beneath a checked label in
+ * the recordings sidebar.
+ */
+export async function getNerEntityOptionsForLabel({
+  label,
+  collectionFilters,
+  folderFilters,
+  offset = 0,
+  sourceLimit = NER_ENTITY_SOURCE_BATCH_SIZE,
+}: {
+  label: string;
+  collectionFilters?: string[];
+  folderFilters?: string[];
+  offset?: number;
+  sourceLimit?: number;
+}): Promise<{ options: NerEntityOption[]; hasMore: boolean; scannedCount: number }> {
+  const entityMap = new Map<string, NerEntityAccumulator>();
+  const client = await initWeaviateClient();
+  const myCollection = client.collections.get<Testimonies>('Testimonies');
+  const combinedFilter = buildCombinedFilters(myCollection, [label], collectionFilters, folderFilters);
+
+  // Discovery has to see every testimony before deciding which entities are
+  // "top" — cutting to a fixed page after only the first batch lets common
+  // entities that happened to sample low get dropped with no way back.
+  let scanOffset = offset;
+  let scannedCount = 0;
+  let hitSafetyCap = false;
+
+  for (let batch = 0; batch < NER_ENTITY_MAX_SCAN_BATCHES; batch++) {
+    const response = await myCollection.query.fetchObjects({
+      limit: sourceLimit,
+      offset: scanOffset,
+      filters: combinedFilter,
+      returnProperties: NER_DATA_RETURN_PROPS,
+    });
+
+    response.objects.forEach((item) => {
+      const recordingId = item.uuid ?? '';
+      normalizeTimedNerData(item.properties?.ner_data)
+        .filter((ner) => ner.label === label)
+        .forEach((ner) => addNerEntityOption(entityMap, ner.text, label, recordingId));
+    });
+
+    scannedCount += response.objects.length;
+    scanOffset += response.objects.length;
+
+    if (response.objects.length < sourceLimit) break;
+    if (batch === NER_ENTITY_MAX_SCAN_BATCHES - 1) {
+      hitSafetyCap = true;
+      console.warn(
+        `getNerEntityOptionsForLabel: hit the ${NER_ENTITY_MAX_SCAN_BATCHES}-batch safety cap scanning testimonies for label="${label}" — entity list may be missing some options`,
+      );
+    }
+  }
+
+  const options = await countChunkMatchesForEntityOptions(
+    sortNerEntityOptions(entityMap),
+    label,
+    collectionFilters,
+    folderFilters,
+  );
+
+  return { options, hasMore: hitSafetyCap, scannedCount };
 }
