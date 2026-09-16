@@ -8,8 +8,26 @@ import { useRouter } from 'next/navigation';
 import { Chunks } from '@/types/weaviate';
 import { colors } from '@/lib/theme';
 import { normalizeTimedNerData } from '@/types/ner';
+import { getMuxThumbnailUrl } from '@/lib/muxThumbnail';
 
 export type ExcerptGroupingSource = Partial<Chunks>;
+
+/** Matches the convention used across TheirStory portals for search marking. */
+const HIGHLIGHT_COLOR = '#fde047';
+
+const excerptThumbnail = (videoUrl?: string, startTime?: number) => {
+  const src = getMuxThumbnailUrl(videoUrl, startTime ?? 0, { width: 160 });
+  if (!src) return null;
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={src}
+      alt=""
+      loading="lazy"
+      style={{ width: 96, height: 54, objectFit: 'cover', borderRadius: 4, flexShrink: 0 }}
+    />
+  );
+};
 
 const formatTimestamp = (seconds?: number) => {
   if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return '';
@@ -91,7 +109,14 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
   const groups = useMemo(() => {
     const byRecording = new Map<
       string,
-      { id: string; title: string; date?: string; thumbnail?: string; items: ExcerptGroupingSource[] }
+      {
+        id: string;
+        title: string;
+        date?: string;
+        thumbnail?: string;
+        videoUrl?: string;
+        items: ExcerptGroupingSource[];
+      }
     >();
 
     excerpts.forEach((excerpt) => {
@@ -106,7 +131,13 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
         id,
         title: String(excerpt.interview_title ?? 'Untitled recording'),
         date: excerpt.recording_date ? String(excerpt.recording_date) : undefined,
-        thumbnail: excerpt.thumbnail_url ? String(excerpt.thumbnail_url) : undefined,
+        // Stored thumbnails are frequently empty for these recordings, so fall
+        // back to a still from the video itself.
+        thumbnail:
+          (excerpt.thumbnail_url ? String(excerpt.thumbnail_url) : '') ||
+          getMuxThumbnailUrl(excerpt.video_url as string | undefined, 10, { width: 160 }) ||
+          undefined,
+        videoUrl: excerpt.video_url ? String(excerpt.video_url) : undefined,
         items: [excerpt],
       });
     });
@@ -206,6 +237,9 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                         borderTop: `1px solid ${colors.common.border}`,
                         '&:hover': { bgcolor: 'action.hover' },
                       }}>
+                      <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
+                        {excerptThumbnail(group.videoUrl, excerpt.start_time as number | undefined)}
+                        <Box sx={{ minWidth: 0, flex: 1 }}>
                       <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 0.5 }}>
                         <Typography sx={{ fontSize: '0.75rem', color: 'text.secondary', fontWeight: 600 }}>
                           {formatTimestamp(excerpt.start_time as number | undefined)}
@@ -227,7 +261,7 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                             <Box
                               key={partIndex}
                               component="mark"
-                              sx={{ bgcolor: colors.secondary.light, px: 0.25, borderRadius: '2px' }}>
+                              sx={{ bgcolor: HIGHLIGHT_COLOR, color: 'inherit', px: 0.25, borderRadius: '2px' }}>
                               {part.text}
                             </Box>
                           ) : (
@@ -235,6 +269,8 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                           ),
                         )}
                       </Typography>
+                        </Box>
+                      </Box>
                     </Box>
                   );
                 })}

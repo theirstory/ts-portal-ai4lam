@@ -1226,6 +1226,7 @@ const EXCERPT_RETURN_PROPS: QueryProperty<Chunks>[] = [
   'interview_title',
   'recording_date',
   'thumbnail_url',
+  'video_url',
   'section_title',
   'speaker',
   'transcription',

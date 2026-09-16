@@ -78,11 +78,12 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
     [selectedNerEntities],
   );
 
-  // Searching has to reach entities under labels that aren't open yet,
-  // otherwise the box only finds what the user has already looked at. Every
-  // label's entities load once a query is typed.
+  // Every label's entities are loaded when either search box is in play: the
+  // entity box needs to reach labels that aren't open yet, and a transcript
+  // search needs every label's count to describe the narrowed results rather
+  // than the whole archive.
   useEffect(() => {
-    if (!entityQuery) return;
+    if (!entityQuery && !searchTerm.trim()) return;
     nerIds.forEach((label) => {
       const loaded = (nerEntityOptionsByLabel[label]?.length ?? 0) > 0;
       if (!loaded && !nerEntityOptionsLoadingByLabel[label]) {
@@ -91,6 +92,7 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
     });
   }, [
     entityQuery,
+    searchTerm,
     loadNerEntityOptions,
     maxValue,
     minValue,
@@ -227,7 +229,11 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
             const visibleEntities = entityQuery ? matchingEntities : matchingEntities.slice(0, visibleCount);
             const canShowMore =
               !entityQuery && (matchingEntities.length > visibleCount || nerEntityOptionsHasMoreByLabel[id]);
-            const entityCount = availableNerEntityCounts[id] ?? allEntities.length;
+            // With a search active the archive-wide count would contradict the
+            // list beneath it, so the loaded (narrowed) count wins.
+            const isNarrowed = Boolean(searchTerm.trim());
+            const hasLoaded = allEntities.length > 0 || nerEntityOptionsLoadingByLabel[id] === false;
+            const entityCount = isNarrowed && hasLoaded ? allEntities.length : (availableNerEntityCounts[id] ?? allEntities.length);
 
             return (
               <Box key={id}>
