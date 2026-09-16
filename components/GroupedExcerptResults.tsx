@@ -1,9 +1,11 @@
 'use client';
 
 import React, { useMemo, useState } from 'react';
-import { Box, Collapse, IconButton, Typography } from '@mui/material';
+import { Box, Collapse, IconButton, InputAdornment, TextField, Typography } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
+import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
+import ClearIcon from '@mui/icons-material/Clear';
 import { useRouter } from 'next/navigation';
 import { Chunks } from '@/types/weaviate';
 import { colors } from '@/lib/theme';
@@ -11,9 +13,6 @@ import { normalizeTimedNerData } from '@/types/ner';
 import { getMuxThumbnailUrl } from '@/lib/muxThumbnail';
 
 export type ExcerptGroupingSource = Partial<Chunks>;
-
-/** Matches the convention used across TheirStory portals for search marking. */
-const HIGHLIGHT_COLOR = '#fde047';
 
 const excerptThumbnail = (videoUrl?: string, startTime?: number) => {
   const src = getMuxThumbnailUrl(videoUrl, startTime ?? 0, { width: 160 });
@@ -39,49 +38,68 @@ const formatTimestamp = (seconds?: number) => {
   return hours ? `${hours}:${pad(minutes)}:${pad(secs)}` : `${pad(minutes)}:${pad(secs)}`;
 };
 
+/** Marks entity mentions; the narrowing term gets its own colour. */
+const HIGHLIGHT_COLOR = '#fde047';
+const FILTER_HIGHLIGHT_COLOR = '#a5d8ff';
+
+type HighlightPart = { text: string; kind: 'none' | 'entity' | 'filter' };
+
 /**
- * Splits an excerpt around the entity mentions so they can be marked, without
- * regex over user text — offsets come from the stored mention text itself.
+ * Splits an excerpt around the terms to mark, without regex over user text —
+ * offsets come from indexOf on the term itself, so a filter containing regex
+ * metacharacters cannot break the render or match the wrong thing.
+ *
+ * Entity mentions and the narrowing term are marked in different colours: they
+ * answer different questions, and one colour for both would leave a reader
+ * unable to tell why any given word is lit up.
  */
-const highlightParts = (text: string, terms: string[]) => {
-  if (!text || terms.length === 0) return [{ text, match: false }];
+export const highlightParts = (text: string, entityTerms: string[], filterTerm?: string): HighlightPart[] => {
+  if (!text) return [{ text, kind: 'none' }];
 
   const lower = text.toLowerCase();
-  const ranges: [number, number][] = [];
+  const ranges: { start: number; end: number; kind: 'entity' | 'filter' }[] = [];
 
-  terms.forEach((term) => {
-    const needle = term.toLowerCase();
+  const collect = (term: string, kind: 'entity' | 'filter') => {
+    const needle = term.trim().toLowerCase();
     if (needle.length < 2) return;
     let from = 0;
     for (;;) {
       const index = lower.indexOf(needle, from);
       if (index === -1) break;
-      ranges.push([index, index + needle.length]);
+      ranges.push({ start: index, end: index + needle.length, kind });
       from = index + needle.length;
     }
+  };
+
+  entityTerms.forEach((term) => collect(term, 'entity'));
+  if (filterTerm) collect(filterTerm, 'filter');
+
+  if (!ranges.length) return [{ text, kind: 'none' }];
+
+  // Longest first at a given position, and the narrowing term wins a tie since
+  // it is what the reader just asked to see.
+  ranges.sort(
+    (a, b) =>
+      a.start - b.start ||
+      b.end - b.start - (a.end - a.start) ||
+      (a.kind === 'filter' ? -1 : 1),
+  );
+
+  const accepted: typeof ranges = [];
+  ranges.forEach((range) => {
+    const last = accepted[accepted.length - 1];
+    if (last && range.start < last.end) return;
+    accepted.push(range);
   });
 
-  if (!ranges.length) return [{ text, match: false }];
-
-  ranges.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
-  const merged: [number, number][] = [];
-  ranges.forEach(([start, end]) => {
-    const last = merged[merged.length - 1];
-    if (last && start <= last[1]) {
-      last[1] = Math.max(last[1], end);
-      return;
-    }
-    merged.push([start, end]);
-  });
-
-  const parts: { text: string; match: boolean }[] = [];
+  const parts: HighlightPart[] = [];
   let cursor = 0;
-  merged.forEach(([start, end]) => {
-    if (start > cursor) parts.push({ text: text.slice(cursor, start), match: false });
-    parts.push({ text: text.slice(start, end), match: true });
+  accepted.forEach(({ start, end, kind }) => {
+    if (start > cursor) parts.push({ text: text.slice(cursor, start), kind: 'none' });
+    parts.push({ text: text.slice(start, end), kind });
     cursor = end;
   });
-  if (cursor < text.length) parts.push({ text: text.slice(cursor), match: false });
+  if (cursor < text.length) parts.push({ text: text.slice(cursor), kind: 'none' });
   return parts;
 };
 
@@ -105,6 +123,16 @@ interface Props {
 export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilterParam, emptyMessage }: Props) => {
   const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
+  const [resultsFilter, setResultsFilter] = useState('');
+
+  const filterTerm = resultsFilter.trim();
+  // Narrowing happens over the excerpts already on screen rather than by
+  // re-querying, so it stays instant and can only ever reduce what is shown.
+  const visibleExcerpts = useMemo(() => {
+    if (!filterTerm) return excerpts;
+    const needle = filterTerm.toLowerCase();
+    return excerpts.filter((excerpt) => String(excerpt.transcription ?? '').toLowerCase().includes(needle));
+  }, [excerpts, filterTerm]);
 
   const groups = useMemo(() => {
     const byRecording = new Map<
@@ -119,7 +147,7 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
       }
     >();
 
-    excerpts.forEach((excerpt) => {
+    visibleExcerpts.forEach((excerpt) => {
       const id = String(excerpt.theirstory_id ?? '');
       if (!id) return;
       const existing = byRecording.get(id);
@@ -146,12 +174,52 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
       ...group,
       items: [...group.items].sort((a, b) => Number(a.start_time ?? 0) - Number(b.start_time ?? 0)),
     }));
-  }, [excerpts]);
+  }, [visibleExcerpts]);
+
+  const totalExcerpts = excerpts.length;
+  const shownExcerpts = visibleExcerpts.length;
+
+  const filterBox = totalExcerpts > 0 && (
+    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, flexWrap: 'wrap' }}>
+      <TextField
+        size="small"
+        placeholder="Filter these results..."
+        value={resultsFilter}
+        onChange={(event) => setResultsFilter(event.target.value)}
+        inputProps={{ 'aria-label': 'Filter the results shown' }}
+        sx={{ flex: 1, minWidth: 220, maxWidth: 420 }}
+        InputProps={{
+          startAdornment: (
+            <InputAdornment position="start">
+              <FilterAltOutlinedIcon fontSize="small" sx={{ color: 'text.disabled' }} />
+            </InputAdornment>
+          ),
+          endAdornment: resultsFilter ? (
+            <InputAdornment position="end">
+              <IconButton size="small" aria-label="Clear results filter" onClick={() => setResultsFilter('')}>
+                <ClearIcon fontSize="small" />
+              </IconButton>
+            </InputAdornment>
+          ) : null,
+        }}
+      />
+      <Typography sx={{ fontSize: '0.8125rem', color: 'text.secondary' }}>
+        {filterTerm
+          ? `${shownExcerpts} of ${totalExcerpts} ${totalExcerpts === 1 ? 'excerpt' : 'excerpts'}`
+          : `${totalExcerpts} ${totalExcerpts === 1 ? 'excerpt' : 'excerpts'}`}
+      </Typography>
+    </Box>
+  );
 
   if (!groups.length) {
     return (
-      <Box sx={{ py: 6, textAlign: 'center' }}>
-        <Typography color="text.secondary">{emptyMessage ?? 'No excerpts found.'}</Typography>
+      <Box>
+        {filterBox}
+        <Box sx={{ py: 6, textAlign: 'center' }}>
+          <Typography color="text.secondary">
+            {filterTerm ? `No excerpts contain "${filterTerm}".` : (emptyMessage ?? 'No excerpts found.')}
+          </Typography>
+        </Box>
       </Box>
     );
   }
@@ -165,7 +233,9 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
   };
 
   return (
-    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
+    <Box>
+      {filterBox}
+      <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5 }}>
       {groups.map((group) => {
         const isCollapsed = Boolean(collapsed[group.id]);
         return (
@@ -256,16 +326,21 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                         )}
                       </Box>
                       <Typography sx={{ fontSize: '0.875rem', lineHeight: 1.6 }}>
-                        {highlightParts(text, terms).map((part, partIndex) =>
-                          part.match ? (
+                        {highlightParts(text, terms, filterTerm).map((part, partIndex) =>
+                          part.kind === 'none' ? (
+                            <React.Fragment key={partIndex}>{part.text}</React.Fragment>
+                          ) : (
                             <Box
                               key={partIndex}
                               component="mark"
-                              sx={{ bgcolor: HIGHLIGHT_COLOR, color: 'inherit', px: 0.25, borderRadius: '2px' }}>
+                              sx={{
+                                bgcolor: part.kind === 'filter' ? FILTER_HIGHLIGHT_COLOR : HIGHLIGHT_COLOR,
+                                color: 'inherit',
+                                px: 0.25,
+                                borderRadius: '2px',
+                              }}>
                               {part.text}
                             </Box>
-                          ) : (
-                            <React.Fragment key={partIndex}>{part.text}</React.Fragment>
                           ),
                         )}
                       </Typography>
@@ -279,6 +354,7 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
           </Box>
         );
       })}
+      </Box>
     </Box>
   );
 };
