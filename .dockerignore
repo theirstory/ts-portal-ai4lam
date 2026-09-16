@@ -1,0 +1,12 @@
+.git
+.github
+.next
+.yarn/cache
+.yarn/unplugged
+node_modules
+nlp-processor
+coverage
+weaviate-data.tar.gz
+*.md
+.env
+.env.*

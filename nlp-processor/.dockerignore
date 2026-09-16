@@ -1,0 +1,10 @@
+# Secrets: env is supplied at runtime via docker-compose env_file, so it must
+# never be baked into the image (the Dockerfile's `COPY . .` would otherwise
+# ship ANTHROPIC_API_KEY to any registry the image is pushed to).
+.env
+.env.*
+
+__pycache__
+*.pyc
+.venv
+venv

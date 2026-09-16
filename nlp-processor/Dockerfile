@@ -16,8 +16,16 @@ RUN apt-get update && apt-get install -y \
 # Copy requirements first for better caching
 COPY requirements.txt .
 
-# Install Python dependencies
-RUN pip install --no-cache-dir -r requirements.txt
+# Install CPU-only torch first. The default PyPI wheel drags in ~2.5GB of NVIDIA
+# CUDA packages that this service never uses (USE_GPU=false, and it is deployed to
+# CPU-only hosts). Pulling it from the PyTorch CPU index keeps the image small.
+# If this ever runs on a GPU host, drop this line so requirements.txt resolves the
+# CUDA build from PyPI instead.
+RUN pip install --no-cache-dir --timeout 180 --retries 10 \
+    --index-url https://download.pytorch.org/whl/cpu torch
+
+# Install the rest (torch above already satisfies the torch requirement)
+RUN pip install --no-cache-dir --timeout 180 --retries 10 -r requirements.txt
 
 # Copy application code
 COPY . .
