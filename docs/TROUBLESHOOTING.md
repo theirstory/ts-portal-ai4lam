@@ -237,7 +237,8 @@ docker stats
 
 # Reduce NER processing
 # Edit nlp-processor/.env.local:
-GLINER_THRESHOLD=0.5  # Higher = fewer entities = faster
+NER_WINDOW_CONCURRENCY=2  # Fewer parallel Claude requests
+NER_EFFORT=low  # Faster and cheaper per window
 MIN_TEXT_LENGTH_FOR_NER=100  # Skip short texts
 
 # Increase chunk size (fewer chunks)
@@ -343,16 +344,19 @@ docker compose logs weaviate-init | grep ner
 curl -s "http://localhost:8080/v1/objects?class=Chunks&limit=1" | \
   jq '.objects[0].properties.ner_data'
 
-# Check NER threshold
-curl http://localhost:7070/health | jq '.gliner_threshold'
+# Check NER model and provider
+curl http://localhost:7070/health | jq '.ner_model, .ner_provider, .labels_count'
 ```
 
 **Solutions:**
 
 ```bash
-# Lower NER threshold for more entities
-# Edit nlp-processor/.env.local:
-GLINER_THRESHOLD=0.2
+# Confirm the API key reached the service (labels_count > 0 and no NER errors in logs)
+# Edit nlp-processor/.env:
+NER_PROVIDER_API_KEY=sk-ant-...
+
+# Remove a term from the stoplist if it is filtering something you want indexed
+NER_STOPLIST=web,website,websites,internet,email
 
 # Verify labels in config.json
 cat config.json | jq '.ner.labels'

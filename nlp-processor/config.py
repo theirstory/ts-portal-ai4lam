@@ -2,6 +2,7 @@
 
 import json
 import os
+from functools import lru_cache
 from pathlib import Path
 from typing import List
 
@@ -32,13 +33,36 @@ class Config:
     )
     DEFAULT_NER_LABELS = [x.strip() for x in DEFAULT_NER_LABELS_ENV.split(",") if x.strip()]
     
-    # GLiNER Model Configuration
-    GLINER_MODEL = os.getenv("GLINER_MODEL", "urchade/gliner_multi-v2.1")
-    GLINER_THRESHOLD = float(os.getenv("GLINER_THRESHOLD", "0.3"))
-    GLINER_LOAD_TIMEOUT_SECONDS = int(
-        os.getenv("GLINER_LOAD_TIMEOUT_SECONDS", "500")
+    # Claude NER Configuration
+    NER_PROVIDER = os.getenv("NER_PROVIDER", "anthropic").strip().lower()
+    NER_MODEL = os.getenv("NER_MODEL", "claude-opus-5").strip()
+    NER_PROVIDER_API_KEY = os.getenv(
+        "NER_PROVIDER_API_KEY",
+        os.getenv("ANTHROPIC_API_KEY", ""),
     )
+    # Words of transcript sent to the model per request. Wide enough that the
+    # model can tell a named entity from a passing pronoun.
+    NER_WORDS_PER_WINDOW = int(os.getenv("NER_WORDS_PER_WINDOW", "1200"))
+    NER_WINDOW_CONCURRENCY = int(os.getenv("NER_WINDOW_CONCURRENCY", "4"))
+    NER_MAX_OUTPUT_TOKENS = int(os.getenv("NER_MAX_OUTPUT_TOKENS", "16000"))
+    NER_TIMEOUT_SECONDS = int(os.getenv("NER_TIMEOUT_SECONDS", "120"))
+    NER_MAX_RETRIES = int(os.getenv("NER_MAX_RETRIES", "3"))
+    # Empty leaves the API's own effort default in place. Lower values cut cost
+    # on long transcripts: low | medium | high | xhigh | max
+    NER_EFFORT = os.getenv("NER_EFFORT", "").strip()
     MIN_TEXT_LENGTH_FOR_NER = int(os.getenv("MIN_TEXT_LENGTH_FOR_NER", "50"))
+    # Single-word surface forms to never treat as entities. The prompt asks the
+    # model to skip generic nouns, but a few slip through on every run, so the
+    # archive's own noise words are filtered deterministically instead.
+    NER_STOPLIST = {
+        term.strip().lower()
+        for term in os.getenv(
+            "NER_STOPLIST",
+            "web,website,websites,internet,email,video,audio,software,hardware,"
+            "metadata,data,technology,online,digital,computer,computers",
+        ).split(",")
+        if term.strip()
+    }
     
     # HuggingFace Local Embeddings Configuration
     EMBEDDING_MODEL = os.getenv(
@@ -84,16 +108,23 @@ class Config:
     @classmethod
     def print_config(cls):
         """Print current configuration for debugging."""
-        print(f"[Config] GLiNER model: {cls.GLINER_MODEL}")
-        print(f"[Config] GLiNER threshold: {cls.GLINER_THRESHOLD}")
-        print(f"[Config] GLiNER load timeout (s): {cls.GLINER_LOAD_TIMEOUT_SECONDS}")
+        print(f"[Config] NER provider: {cls.NER_PROVIDER}")
+        print(f"[Config] NER model: {cls.NER_MODEL}")
+        print(f"[Config] NER API key configured: {bool(cls.NER_PROVIDER_API_KEY)}")
+        print(f"[Config] NER words per window: {cls.NER_WORDS_PER_WINDOW}")
+        print(f"[Config] NER window concurrency: {cls.NER_WINDOW_CONCURRENCY}")
+        print(f"[Config] NER effort: {cls.NER_EFFORT or '(api default)'}")
         print(f"[Config] Min text length for NER: {cls.MIN_TEXT_LENGTH_FOR_NER}")
+        print(f"[Config] NER stoplist terms: {len(cls.NER_STOPLIST)}")
         print(f"[Config] Weaviate URL: {cls.WEAVIATE_URL}")
         print(f"[Config] Embedding model: {cls.EMBEDDING_MODEL}")
         print(f"[Config] Use GPU: {cls.USE_GPU}")
         print(f"[Config] Embedding load timeout (s): {cls.EMBEDDING_LOAD_TIMEOUT_SECONDS}")
 
 
-# Initialize NER labels on module import
-NER_LABELS = Config.load_ner_labels()
-print(f"[Config] Using {len(NER_LABELS)} NER labels: {NER_LABELS}")
+@lru_cache(maxsize=1)
+def get_ner_labels() -> List[str]:
+    """Load NER labels only for code paths that actually run entity extraction."""
+    labels = Config.load_ner_labels()
+    print(f"[Config] Using {len(labels)} NER labels: {labels}")
+    return labels

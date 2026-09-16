@@ -50,13 +50,13 @@ curl http://localhost:8080/v1/.well-known/ready
 
 - **Sentence Chunking**: Splits transcript paragraphs into sentence-based chunks with overlap
 - **Embeddings**: Generates local vectors using `sentence-transformers/LaBSE`
-- **NER**: Extracts named entities using GLiNER (people, organizations, locations, etc.)
+- **NER**: Extracts named entities using Claude (people, organizations, locations, etc.), then locates each mention in the word stream for exact timings
 - **Batch Processing**: Efficient insertion of chunks into Weaviate
 
 **Key Technologies:**
 
 - FastAPI (Python 3.11)
-- GLiNER multi-v2.1 (zero-shot NER)
+- Claude via the Anthropic API (NER)
 - sentence-transformers/LaBSE
 - Weaviate Python client
 
@@ -262,7 +262,6 @@ curl http://localhost:3000                      # Frontend
 
 **Model Cache:**
 
-- GLiNER: ~200MB
 - Sentence Transformers: ~150MB
 - Total: ~400MB (downloaded once, cached)
 

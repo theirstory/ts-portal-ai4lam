@@ -1,280 +1,510 @@
-"""Named Entity Recognition (NER) processing using GLiNER and spaCy."""
+"""Named Entity Recognition using Claude.
 
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeoutError
+Replaces GLiNER, which ran per paragraph with no view of the interview and so
+tagged pronouns and generic nouns ("you", "it", "dad") as people.
+
+Split of responsibilities:
+  - Claude does the judgement: read a wide window of the transcript and return a
+    deduplicated list of real named entities, each with a label and the surface
+    forms the transcript actually uses for it.
+  - This module does the locating: scan the word stream for those surface forms
+    to produce every occurrence with exact start/end times.
+
+That keeps highlight timings exact (they come from word timestamps, not from the
+model guessing character offsets) and keeps the model's output small and cheap.
+"""
+
+from __future__ import annotations
+
+import json
 import logging
-import time
-from typing import Any, Dict, List, Literal, Optional, Tuple
-import warnings
+import re
+import unicodedata
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass, field
+from functools import lru_cache
+from typing import Any, Dict, List, Sequence, Set, Tuple
 
-import spacy
-from gliner import GLiNER
-from spacy.language import Language
+import anthropic
 
-from config import Config, NER_LABELS
+from config import Config
 
 logger = logging.getLogger(__name__)
 
-# Reduce noisy HuggingFace warnings in normal operation logs.
-warnings.filterwarnings(
-    "ignore",
-    message=r"The `resume_download` argument is deprecated.*",
-    category=UserWarning,
-)
 
-# Initialize spaCy model
-nlp = spacy.blank("en")
-gliner_model: Optional[GLiNER] = None
+class WindowRefused(Exception):
+    """The model declined a window. Distinct from a window with no entities."""
 
 
-def get_gliner_model() -> GLiNER:
-    """Lazily load GLiNER model on first real NER use."""
-    global gliner_model
-    if gliner_model is None:
-        timeout = max(1, int(Config.GLINER_LOAD_TIMEOUT_SECONDS))
-        started_at = time.time()
-        logger.info(
-            "[NER] Loading GLiNER model '%s' (timeout=%ss). This may take several minutes on first run.",
-            Config.GLINER_MODEL,
-            timeout,
+@dataclass
+class CanonicalEntity:
+    """One distinct entity, with every surface form the transcript uses for it."""
+
+    name: str
+    label: str
+    aliases: List[str] = field(default_factory=list)
+
+
+@dataclass
+class Occurrence:
+    """A single located mention, timed from the word stream."""
+
+    text: str
+    label: str
+    start_time: float
+    end_time: float
+    start_word: int
+    end_word: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "text": self.text,
+            "label": self.label,
+            "start_time": float(self.start_time),
+            "end_time": float(self.end_time),
+            "start_word": self.start_word,
+            "end_word": self.end_word,
+        }
+
+
+# ----------------------------------------------------------------- tokens
+
+def normalize_token(value: str) -> str:
+    """Casefold, strip accents, and drop punctuation so surface forms compare."""
+    decomposed = unicodedata.normalize("NFKD", value.lower())
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    stripped = re.sub(r"[^a-z0-9'’-]", "", stripped)
+    return re.sub(r"^['’-]+|['’-]+$", "", stripped)
+
+
+def tokenize(value: str) -> List[str]:
+    return [token for token in (normalize_token(part) for part in value.split()) if token]
+
+
+def normalize_token_cased(value: str) -> str:
+    """Same as normalize_token but keeps case, so "US" can be told from "us"."""
+    decomposed = unicodedata.normalize("NFKD", value)
+    stripped = "".join(ch for ch in decomposed if not unicodedata.combining(ch))
+    stripped = re.sub(r"[^A-Za-z0-9'’-]", "", stripped)
+    return re.sub(r"^['’-]+|['’-]+$", "", stripped)
+
+
+def tokenize_cased(value: str) -> List[str]:
+    return [token for token in (normalize_token_cased(part) for part in value.split()) if token]
+
+
+# Never treat these as entity surface forms. Short acronyms collide with common
+# words once case is discarded - "US" (the country) vs. the pronoun "us" - so
+# such forms are matched case-sensitively instead (see is_acronym_form).
+PRONOUNS: Set[str] = {
+    "i", "me", "my", "mine", "myself",
+    "you", "your", "yours", "yourself",
+    "he", "him", "his", "himself",
+    "she", "her", "hers", "herself",
+    "it", "its", "itself",
+    "we", "us", "our", "ours", "ourselves",
+    "they", "them", "their", "theirs", "themselves",
+    "this", "that", "these", "those", "there", "here",
+}
+
+
+# A leading article belongs to the sentence, not the entity name. The prompt asks
+# for bare names, but the model still returns "The Fiji" often enough to enforce it.
+ARTICLES: Set[str] = {"the", "a", "an"}
+
+# Question and relative words, which behave like pronouns for matching purposes.
+# Kept separate from PRONOUNS so "The Who" is not reduced to a bare "who" that
+# would then match every question in the transcript.
+QUESTION_WORDS: Set[str] = {"who", "what", "which", "when", "where", "why", "how"}
+
+
+def strip_leading_articles(tokens: List[str]) -> List[str]:
+    """Drop a leading "the"/"a"/"an", unless doing so leaves a word too common to match on."""
+    index = 0
+    while index < len(tokens) - 1 and tokens[index].lower() in ARTICLES:
+        index += 1
+
+    remainder = tokens[index:]
+    if len(remainder) == 1 and remainder[0].lower() in (PRONOUNS | QUESTION_WORDS):
+        return tokens
+    return remainder
+
+
+def is_acronym_form(surface: str) -> bool:
+    """A short all-caps form such as "US", "MIT", "NASA", "U.S."."""
+    letters = re.sub(r"[^A-Za-z]", "", surface)
+    return 0 < len(letters) <= 4 and letters == letters.upper()
+
+
+# ----------------------------------------------------------------- claude
+
+SYSTEM_PROMPT = """You extract named entities from oral history interview transcripts for a research archive.
+
+Return ONLY real, specific named entities - things a researcher would want to search or browse by.
+
+Include:
+- Named people (full names where given), organizations, institutions, companies
+- Named places (cities, states, countries, neighbourhoods, campuses, buildings)
+- Specific dates and named time periods ("April 30th, 1960", "the Great Depression")
+- Named events, named awards, named publications/books, named technologies, named social movements, named languages
+
+Exclude, without exception:
+- Pronouns and possessives ("I", "you", "he", "we", "my", "your")
+- Generic role or kinship nouns with no name ("dad", "mother", "the professor", "people", "the company")
+- Generic nouns, filler words, verbs, adjectives
+- Generic technology and media nouns ("the web", "websites", "email", "video", "software", "metadata") - a technology counts only if it has a proper name, like "WebVTT", "HTML", "MARC", "FFmpeg"
+- Vague time references ("later", "back then", "a few years ago")
+- Anything you are not confident is a specific named entity
+
+For each entity give:
+- "name": the canonical form (e.g. "Maynard Ansley Holliday", "Carnegie Mellon University")
+- "label": exactly one of the allowed labels
+- "aliases": every other surface form used in THIS excerpt for the same entity, exactly as transcribed (e.g. ["Holliday", "Maynard", "Carnegie Mellon"]). Omit or use [] if none.
+
+Deduplicate: one object per distinct entity, not one per mention.
+Do not include a leading article ("the", "a", "an") in a name or an alias.
+
+Respond with a JSON array only - no prose, no markdown fence."""
+
+
+def build_user_prompt(window: Sequence[Dict[str, Any]], labels: Sequence[str]) -> str:
+    transcript = "\n\n".join(
+        f"[{para.get('speaker') or 'Unknown'}] {para['text']}" for para in window
+    )
+    return (
+        f"Allowed labels (use these exact strings): {', '.join(labels)}\n\n"
+        "Transcript excerpt:\n"
+        f'"""\n{transcript}\n"""\n\n'
+        "Return the JSON array of entities found in this excerpt."
+    )
+
+
+@lru_cache(maxsize=1)
+def get_client() -> anthropic.Anthropic:
+    if not Config.NER_PROVIDER_API_KEY:
+        raise RuntimeError(
+            "NER_PROVIDER_API_KEY (or ANTHROPIC_API_KEY) is required to run NER. "
+            "Set one, or import with run_ner=false."
         )
-        executor = ThreadPoolExecutor(max_workers=1)
-        future = executor.submit(GLiNER.from_pretrained, Config.GLINER_MODEL)
-        try:
-            poll_seconds = 10
-            while True:
-                elapsed = time.time() - started_at
-                remaining = timeout - elapsed
-                if remaining <= 0:
-                    raise FutureTimeoutError()
-
-                try:
-                    gliner_model = future.result(timeout=min(poll_seconds, remaining))
-                    break
-                except FutureTimeoutError:
-                    logger.info(
-                        "[NER] Still loading GLiNER model '%s'... %.0fs elapsed",
-                        Config.GLINER_MODEL,
-                        time.time() - started_at,
-                    )
-        except FutureTimeoutError as exc:
-            message = (
-                "[NER] Timeout loading GLiNER model "
-                f"'{Config.GLINER_MODEL}' after {timeout}s. "
-                "Verify internet/cache, increase GLINER_LOAD_TIMEOUT_SECONDS, "
-                "or import with run_ner=false."
-            )
-            logger.error(message)
-            raise RuntimeError(message) from exc
-        except Exception as exc:
-            message = (
-                "[NER] Failed to load GLiNER model "
-                f"'{Config.GLINER_MODEL}': {exc}"
-            )
-            logger.exception(message)
-            raise RuntimeError(message) from exc
-        finally:
-            executor.shutdown(wait=False, cancel_futures=True)
-
-        logger.info("[NER] GLiNER model ready in %.2fs", time.time() - started_at)
-    return gliner_model
-
-NerEmptyReason = Literal["ok", "too_short", "gliner_bug_empty", "no_entities"]
+    logger.info("[NER] Using Claude entity extractor (model=%s)", Config.NER_MODEL)
+    return anthropic.Anthropic(
+        api_key=Config.NER_PROVIDER_API_KEY,
+        timeout=Config.NER_TIMEOUT_SECONDS,
+        max_retries=Config.NER_MAX_RETRIES,
+    )
 
 
-@Language.component("gliner_custom")
-def gliner_custom_component(doc):
-    """Custom spaCy pipeline component for GLiNER entity extraction.
-    
-    Args:
-        doc: spaCy Doc object
-        
-    Returns:
-        Doc with entities populated
-    """
-    text = (doc.text or "").strip()
-    
-    if len(text) < 5 or not NER_LABELS:
-        doc.ents = ()
-        return doc
-    
+def parse_entity_json(raw: str, allowed_labels: Set[str]) -> List[CanonicalEntity]:
+    """Pull the JSON array out of the response, dropping anything malformed."""
+    start = raw.find("[")
+    end = raw.rfind("]")
+    if start < 0 or end <= start:
+        return []
+
     try:
-        model = get_gliner_model()
-        ents = model.predict_entities(
-            text=text,
-            labels=NER_LABELS,
-            threshold=Config.GLINER_THRESHOLD,
-        )
-    except IndexError:
-        doc.ents = ()
-        return doc
-    
-    spans = []
-    for entity in ents:
-        label = (entity.get("label") or "").strip()
-        ent_text = (entity.get("text") or "").strip()
-        if not label or not ent_text:
+        parsed = json.loads(raw[start : end + 1])
+    except json.JSONDecodeError:
+        logger.warning("[NER] Could not parse JSON from model response")
+        return []
+
+    if not isinstance(parsed, list):
+        return []
+
+    entities: List[CanonicalEntity] = []
+    for item in parsed:
+        if not isinstance(item, dict):
             continue
-        
-        # Try using offsets returned by GLiNER
-        start_char = entity.get("start")
-        end_char = entity.get("end")
-        
-        span = None
-        if start_char is not None and end_char is not None:
-            try:
-                span = doc.char_span(
-                    int(start_char),
-                    int(end_char),
-                    label=label,
-                    alignment_mode="contract",
-                )
-            except Exception:
-                span = None
-        
-        # Fallback: search for text in string if char_span fails
-        if span is None:
-            idx = text.find(ent_text)
-            if idx != -1:
-                span = doc.char_span(
-                    idx,
-                    idx + len(ent_text),
-                    label=label,
-                    alignment_mode="contract",
-                )
-        
-        if span is not None and (span.text or "").strip():
-            spans.append(span)
-    
-    doc.ents = spacy.util.filter_spans(spans)
-    return doc
+        name = str(item.get("name") or "").strip()
+        label = str(item.get("label") or "").strip().lower()
+        if not name or label not in allowed_labels:
+            continue
+
+        raw_aliases = item.get("aliases")
+        aliases = (
+            [str(alias).strip() for alias in raw_aliases if str(alias).strip()]
+            if isinstance(raw_aliases, list)
+            else []
+        )
+        entities.append(CanonicalEntity(name=name, label=label, aliases=aliases))
+
+    return entities
 
 
-def ensure_ner_pipe():
-    """Ensure the GLiNER custom pipeline component is loaded."""
-    if "gliner_custom" not in nlp.pipe_names:
-        logger.info("[NER] Adding gliner_custom spaCy pipe (model=%s)", Config.GLINER_MODEL)
-        nlp.add_pipe("gliner_custom", last=True)
-        logger.info("[NER] Active pipes: %s", nlp.pipe_names)
+def extract_window_entities(
+    window: Sequence[Dict[str, Any]],
+    labels: Sequence[str],
+    allowed_labels: Set[str],
+) -> Tuple[List[CanonicalEntity], int, int]:
+    """Ask Claude for the entities in one window. Returns (entities, in, out) tokens."""
+    request: Dict[str, Any] = {
+        "model": Config.NER_MODEL,
+        "max_tokens": Config.NER_MAX_OUTPUT_TOKENS,
+        "system": SYSTEM_PROMPT,
+        "messages": [{"role": "user", "content": build_user_prompt(window, labels)}],
+    }
+    # Omitted by default, which leaves the API's own effort default in place.
+    if Config.NER_EFFORT:
+        request["output_config"] = {"effort": Config.NER_EFFORT}
+
+    response = get_client().messages.create(**request)
+
+    # A refused window would otherwise just look like a window with no entities.
+    if response.stop_reason == "refusal":
+        category = getattr(response.stop_details, "category", None)
+        raise WindowRefused(f"model declined this window (category={category})")
+
+    text = "".join(block.text for block in response.content if block.type == "text")
+    usage = response.usage
+    return (
+        parse_entity_json(text, allowed_labels),
+        getattr(usage, "input_tokens", 0) or 0,
+        getattr(usage, "output_tokens", 0) or 0,
+    )
 
 
-def get_safe_token_limit(default_fallback: int = 300) -> int:
-    """Return a conservative token limit based on model configuration."""
-    try:
-        model = get_gliner_model()
-        max_tokens = int(getattr(model.config, "max_length", 384))
-        return max(1, int(max_tokens * 0.8))
-    except Exception as exc:
-        logger.warning("[NER] Could not determine model token limit: %s", exc)
-        return default_fallback
+# ---------------------------------------------------------------- windows
 
+def collect_paragraphs(sections: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Flatten sections into paragraphs carrying their slice of the word stream."""
+    paragraphs: List[Dict[str, Any]] = []
+    cursor = 0
 
-def safe_ner_process(
-    text: str, 
-    min_length: int = Config.MIN_TEXT_LENGTH_FOR_NER
-) -> Tuple[List[Any], NerEmptyReason]:
-    """Process text for NER with error handling.
-    
-    Args:
-        text: Text to process
-        min_length: Minimum text length required for processing
-        
-    Returns:
-        Tuple of (entities list, reason for empty result)
-    """
-    t = (text or "").strip()
-    if len(t) < min_length:
-        return [], "too_short"
-    
-    ensure_ner_pipe()
-    
-    try:
-        doc = nlp(t)
-                
-        # Primary method: doc.ents
-        ents = list(doc.ents) if doc.ents else []
-        if ents:
-            return ents, "ok"
-        
-        # Fallback: doc.spans (in case pipeline uses spans)
-        spans_as_ents: List[Any] = []
-        for _, spans in doc.spans.items():
-            if not spans:
+    for section in sections:
+        for para in section.get("paragraphs", []):
+            words = [
+                word
+                for word in para.get("words", [])
+                if isinstance(word, dict) and (word.get("text") or "").strip()
+            ]
+            if not words:
                 continue
-            for span in spans:
-                if getattr(span, "label_", None) and (span.text or "").strip():
-                    spans_as_ents.append(span)
-        
-        if spans_as_ents:
-            return spans_as_ents, "ok"
-        
-        return [], "no_entities"
-    
-    except IndexError:
-        return [], "gliner_bug_empty"
+
+            paragraphs.append(
+                {
+                    "speaker": para.get("speaker") or "Unknown",
+                    "words": words,
+                    "text": " ".join(word["text"] for word in words),
+                    "first_word": cursor,
+                    "last_word": cursor + len(words) - 1,
+                }
+            )
+            cursor += len(words)
+
+    return paragraphs
 
 
-def build_word_char_spans(words: List[Dict[str, Any]]) -> List[Tuple[int, int, Dict[str, Any]]]:
-    """Build character-level spans for words in chunk text.
-    
-    Generates (char_start, char_end, word_obj) tuples for text created by
-    joining words with spaces.
-    
-    Args:
-        words: List of word dictionaries
-        
-    Returns:
-        List of (start_idx, end_idx, word_dict) tuples
+def build_windows(paragraphs: Sequence[Dict[str, Any]]) -> List[List[Dict[str, Any]]]:
+    """Group paragraphs into windows of roughly NER_WORDS_PER_WINDOW words."""
+    windows: List[List[Dict[str, Any]]] = []
+    current: List[Dict[str, Any]] = []
+    current_words = 0
+
+    for para in paragraphs:
+        size = para["last_word"] - para["first_word"] + 1
+        if current and current_words + size > Config.NER_WORDS_PER_WINDOW:
+            windows.append(current)
+            current = []
+            current_words = 0
+        current.append(para)
+        current_words += size
+
+    if current:
+        windows.append(current)
+    return windows
+
+
+# --------------------------------------------------------------- matching
+
+def merge_entities(
+    batches: Sequence[Sequence[CanonicalEntity]],
+    allowed_labels: Set[str],
+) -> List[CanonicalEntity]:
+    """Fold per-window entity lists into one deduplicated list."""
+    merged: Dict[str, Dict[str, Any]] = {}
+
+    for batch in batches:
+        for entity in batch:
+            if entity.label not in allowed_labels:
+                continue
+            key_tokens = strip_leading_articles(tokenize(entity.name))
+            if not key_tokens:
+                continue
+
+            key = " ".join(key_tokens)
+            existing = merged.setdefault(
+                key, {"name": entity.name, "label_votes": {}, "aliases": set()}
+            )
+            votes = existing["label_votes"]
+            votes[entity.label] = votes.get(entity.label, 0) + 1
+            for alias in entity.aliases:
+                if tokenize(alias):
+                    existing["aliases"].add(alias)
+
+    return [
+        CanonicalEntity(
+            name=entry["name"],
+            # Windows can disagree on a label; take the most frequent reading.
+            label=max(entry["label_votes"].items(), key=lambda pair: pair[1])[0],
+            aliases=sorted(entry["aliases"]),
+        )
+        for entry in merged.values()
+    ]
+
+
+def locate_occurrences(
+    entities: Sequence[CanonicalEntity],
+    words: Sequence[Dict[str, Any]],
+) -> List[Occurrence]:
+    """Find every occurrence of each entity's surface forms in the word stream.
+
+    Longer forms win, so "Carnegie Mellon University" is not also counted as a
+    separate "Carnegie Mellon" occurrence at the same position.
     """
-    spans: List[Tuple[int, int, Dict[str, Any]]] = []
-    pos = 0
-    first = True
-    
-    for word in words:
-        token = (word.get("text") or "") if isinstance(word, dict) else ""
-        if not token:
-            continue
-        
-        if not first:
-            pos += 1  # Space between words
-        first = False
-        
-        start = pos
-        pos += len(token)
-        end = pos
-        spans.append((start, end, word))
-    
-    return spans
+    tokens = [normalize_token(word["text"]) for word in words]
+    tokens_cased = [normalize_token_cased(word["text"]) for word in words]
+
+    forms: List[Dict[str, Any]] = []
+    for entity in entities:
+        for surface in [entity.name, *entity.aliases]:
+            form_tokens = strip_leading_articles(tokenize(surface))
+            # Single-character forms match far too much to be useful.
+            if not form_tokens or len("".join(form_tokens)) < 2:
+                continue
+
+            # Generic single words the archive has chosen not to index.
+            if len(form_tokens) == 1 and form_tokens[0] in Config.NER_STOPLIST:
+                continue
+
+            case_sensitive = len(form_tokens) == 1 and is_acronym_form(surface)
+
+            # A lowercase pronoun is never an entity mention. Acronyms that merely
+            # collide with one ("US") are kept, but matched with case respected.
+            if not case_sensitive and any(token in PRONOUNS for token in form_tokens):
+                continue
+
+            forms.append(
+                {
+                    "tokens": (
+                        strip_leading_articles(tokenize_cased(surface))
+                        if case_sensitive
+                        else form_tokens
+                    ),
+                    "label": entity.label,
+                    "case_sensitive": case_sensitive,
+                }
+            )
+
+    forms.sort(key=lambda form: len(form["tokens"]), reverse=True)
+
+    claimed = [False] * len(words)
+    occurrences: List[Occurrence] = []
+
+    for form in forms:
+        form_tokens = form["tokens"]
+        width = len(form_tokens)
+        haystack = tokens_cased if form["case_sensitive"] else tokens
+
+        for i in range(len(haystack) - width + 1):
+            if haystack[i : i + width] != form_tokens:
+                continue
+            if any(claimed[i : i + width]):
+                continue
+
+            for j in range(i, i + width):
+                claimed[j] = True
+
+            text = " ".join(word["text"] for word in words[i : i + width])
+            occurrences.append(
+                Occurrence(
+                    text=re.sub(r"[,.;:!?]+$", "", text),
+                    label=form["label"],
+                    start_time=float(words[i]["start"]),
+                    end_time=float(words[i + width - 1]["end"]),
+                    start_word=i,
+                    end_word=i + width - 1,
+                )
+            )
+
+    # Word index breaks ties, so ordering stays document order even if two
+    # paragraphs report overlapping timestamps.
+    return sorted(occurrences, key=lambda occ: (occ.start_time, occ.start_word))
 
 
-def map_entity_to_time(
-    ent_start: int,
-    ent_end: int,
-    word_spans: List[Tuple[int, int, Dict[str, Any]]],
-) -> Tuple[Optional[float], Optional[float]]:
-    """Map entity character positions to time range based on word spans.
-    
-    Args:
-        ent_start: Entity start character position
-        ent_end: Entity end character position
-        word_spans: List of (char_start, char_end, word) tuples
-        
-    Returns:
-        Tuple of (start_time, end_time) or (None, None) if not found
-    """
-    touched: List[Dict[str, Any]] = []
-    for word_start, word_end, word in word_spans:
-        if word_end <= ent_start:
-            continue
-        if word_start >= ent_end:
-            break
-        touched.append(word)
-    
-    if not touched:
-        return None, None
-    
-    try:
-        start_time = float(touched[0]["start"])
-        end_time = float(touched[-1]["end"])
-        return start_time, end_time
-    except Exception:
-        return None, None
+# ------------------------------------------------------------------ entry
+
+def empty_ner_stats() -> Dict[str, int]:
+    return {
+        "windows_processed": 0,
+        "paragraphs_processed": 0,
+        "canonical_entities": 0,
+        "entities_found": 0,
+        "empty_results": 0,
+        "refusals": 0,
+        "errors": 0,
+        "input_tokens": 0,
+        "output_tokens": 0,
+    }
+
+
+def extract_entities(
+    sections: Sequence[Dict[str, Any]],
+    labels: Sequence[str],
+) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+    """Run Claude NER over a transcript and return located occurrences + stats."""
+    stats = empty_ner_stats()
+
+    resolved_labels = [str(label).strip() for label in labels if str(label).strip()]
+    if not resolved_labels:
+        logger.info("[NER] No labels configured; skipping extraction")
+        return [], stats
+
+    paragraphs = collect_paragraphs(sections)
+    if not paragraphs:
+        return [], stats
+
+    words = [word for para in paragraphs for word in para["words"]]
+    transcript_length = sum(len(para["text"]) for para in paragraphs)
+    if transcript_length < Config.MIN_TEXT_LENGTH_FOR_NER:
+        logger.info("[NER] Transcript below MIN_TEXT_LENGTH_FOR_NER; skipping")
+        return [], stats
+
+    windows = build_windows(paragraphs)
+    allowed_labels = {label.lower() for label in resolved_labels}
+    print(
+        f"   📏 {len(words)} words -> {len(windows)} windows "
+        f"(~{Config.NER_WORDS_PER_WINDOW} words each)"
+    )
+
+    def run_window(index_window: Tuple[int, List[Dict[str, Any]]]) -> List[CanonicalEntity]:
+        index, window = index_window
+        try:
+            entities, input_tokens, output_tokens = extract_window_entities(
+                window, resolved_labels, allowed_labels
+            )
+            stats["windows_processed"] += 1
+            stats["paragraphs_processed"] += len(window)
+            stats["input_tokens"] += input_tokens
+            stats["output_tokens"] += output_tokens
+            if not entities:
+                stats["empty_results"] += 1
+            print(f"   🔄 Window {index + 1}/{len(windows)}: {len(entities)} entities")
+            return entities
+        except WindowRefused as exc:
+            print(f"      ⚠️  NER window {index + 1} refused: {exc}")
+            stats["refusals"] += 1
+            return []
+        except Exception as exc:
+            print(f"      ⚠️  NER error in window {index + 1}: {exc}")
+            stats["errors"] += 1
+            return []
+
+    with ThreadPoolExecutor(max_workers=Config.NER_WINDOW_CONCURRENCY) as executor:
+        batches = list(executor.map(run_window, enumerate(windows)))
+
+    merged = merge_entities(batches, allowed_labels)
+    stats["canonical_entities"] = len(merged)
+
+    occurrences = locate_occurrences(merged, words)
+    stats["entities_found"] = len(occurrences)
+
+    return [occ.to_dict() for occ in occurrences], stats

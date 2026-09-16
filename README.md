@@ -9,7 +9,7 @@ A complete system to archive, process, and search video/audio interviews with th
 ## 🚀 Features
 
 - **Semantic Search**: Vector search with local embeddings (no external APIs)
-- **Automatic NER**: Entity extraction with GLiNER (zero-shot, multilingual)
+- **Automatic NER**: Entity extraction with Claude, with timings resolved from word timestamps
 - **Sentence Chunking**: Sentence-based chunking with configurable overlap
 - **Multi-format**: Video and audio with synchronized transcriptions
 - **Live Highlighting**: Entities highlighted with clickable timestamps
@@ -23,7 +23,7 @@ A complete system to archive, process, and search video/audio interviews with th
 
 - Weaviate (vector database)
 - FastAPI (Python 3.11)
-- GLiNER multi-v2.1 (NER)
+- Claude (NER)
 - Sentence Transformers LaBSE (local embeddings)
 
 **Frontend:**
@@ -107,11 +107,11 @@ To enable, add the password to your `.env` or production environment:
 SITE_PASSWORD=your_secure_password
 ```
 
-**First time:** may take several minutes while GLiNER / embedding / spaCy models download. Subsequent runs are much faster thanks to cache reuse.
+**First time:** may take several minutes while embedding / spaCy models download. Subsequent runs are much faster thanks to cache reuse. NER calls the Anthropic API, so no model download is needed for it - but it does need an API key.
 
 ## NLP Environment Notes
 
-Default embedding model is `sentence-transformers/LaBSE`. NER uses `urchade/gliner_multi-v2.1`. Chunking is sentence-based with configurable sentence overlap.
+Default embedding model is `sentence-transformers/LaBSE`. NER uses Claude (`claude-opus-5` by default, set via `NER_MODEL`) and requires an Anthropic API key in `nlp-processor/.env`. Chunking is sentence-based with configurable sentence overlap.
 
 **Services:**
 
@@ -329,7 +329,7 @@ ts-portal/
 Built with:
 
 - [Weaviate](https://weaviate.io/) - Vector database
-- [GLiNER](https://github.com/urchade/GLiNER) - Named Entity Recognition
+- [Claude](https://www.anthropic.com/claude) - Named Entity Recognition
 - [Sentence Transformers](https://www.sbert.net/) - Embeddings
 - [Next.js](https://nextjs.org/) - React framework
 - [Material UI](https://mui.com/) - Component library

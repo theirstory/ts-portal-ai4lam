@@ -86,11 +86,22 @@ MAX_WORDS_PER_CHUNK=200
 ### NER Configuration
 
 ```bash
-# GLiNER model identifier
-GLINER_MODEL=urchade/gliner_multi-v2.1
+# Claude model used for entity extraction
+NER_MODEL=claude-opus-5
 
-# Confidence threshold (0.0-1.0)
-GLINER_THRESHOLD=0.3
+# API key. Falls back to ANTHROPIC_API_KEY if unset.
+NER_PROVIDER_API_KEY=sk-ant-...
+
+# Words of transcript per request, and requests run in parallel
+NER_WORDS_PER_WINDOW=1200
+NER_WINDOW_CONCURRENCY=4
+
+# Thinking effort. Empty uses the API default; lower cuts cost on long
+# transcripts: low | medium | high | xhigh | max
+NER_EFFORT=
+
+# Generic single words never indexed as entities (comma-separated)
+NER_STOPLIST=web,website,websites,internet,email,video,audio,software,metadata
 
 # Minimum text length to run NER
 MIN_TEXT_LENGTH_FOR_NER=50
@@ -202,7 +213,8 @@ Response:
   "ok": true,
   "weaviate_url": "http://weaviate:8080",
   "beacon_host": "localhost",
-  "gliner_model": "urchade/gliner_multi-v2.1",
+  "ner_provider": "anthropic",
+  "ner_model": "claude-opus-5",
   "embedding_model": "sentence-transformers/LaBSE",
   "embedding_dimension": 768,
   "use_gpu": false,
@@ -231,8 +243,10 @@ MAX_WORDS_PER_CHUNK=300
 
 ```bash
 # nlp-processor/.env.local
-GLINER_THRESHOLD=0.5
 MIN_TEXT_LENGTH_FOR_NER=100
+NER_EFFORT=high
+# Add archive-specific noise words
+NER_STOPLIST=web,website,websites,internet,email,video,audio,software,metadata,project
 ```
 
 ### Minimal Chunking (More Granular)

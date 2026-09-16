@@ -8,15 +8,10 @@ from fastapi import FastAPI, Query, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from config import Config, NER_LABELS
+from config import Config, get_ner_labels
 from embedding_service import LocalEmbedding
 from functools import lru_cache
-from ner_processor import (
-    build_word_char_spans,
-    get_safe_token_limit,
-    map_entity_to_time,
-    safe_ner_process,
-)
+from ner_processor import empty_ner_stats, extract_entities
 from data_transformers import convert_api_format_to_sections
 from pipeline import TheirStoryTranscriptParser
 from sentence_chunker import chunk_doc_sections
@@ -220,148 +215,29 @@ def _build_testimony_object(
     }
 
 
-def _empty_ner_stats() -> Dict[str, int]:
-    return {
-        "batches_processed": 0,
-        "paragraphs_processed": 0,
-        "skipped_too_short": 0,
-        "skipped_gliner_bug": 0,
-        "entities_found": 0,
-        "errors": 0,
-    }
-
-
-def _collect_ner_paragraphs(sections: List[Dict[str, Any]], safe_token_limit: int) -> List[Dict[str, Any]]:
-    all_paragraphs: List[Dict[str, Any]] = []
-    for section_idx, section in enumerate(sections):
-        for para_idx, para in enumerate(section.get("paragraphs", [])):
-            para_words = para.get("words", [])
-            if para_words:
-                all_paragraphs.append({"words": para_words, "section_idx": section_idx, "para_idx": para_idx})
-
-    print(f"   📊 Total paragraphs to process: {len(all_paragraphs)}")
-
-    split_paragraphs: List[Dict[str, Any]] = []
-    for para_info in all_paragraphs:
-        para_text = words_to_text(para_info["words"])
-        estimated_tokens = len(para_text.split()) * 1.3
-
-        if estimated_tokens > safe_token_limit:
-            words = para_info["words"]
-            chunk_size = max(1, int(len(words) * safe_token_limit / estimated_tokens))
-            for i in range(0, len(words), chunk_size):
-                split_paragraphs.append({**para_info, "words": words[i:i + chunk_size]})
-        else:
-            split_paragraphs.append(para_info)
-
-    print(f"   📏 After splitting long paragraphs: {len(split_paragraphs)} total")
-    return split_paragraphs
-
-
-def _append_batch_entities(
-    batch_text: str,
-    batch_words: List[Dict[str, Any]],
-    batch_size: int,
-    batch_num: int,
-    approx_tokens: int,
-    all_entities: List[Dict[str, Any]],
-    ner_stats: Dict[str, int],
-) -> None:
-    batch_spans = build_word_char_spans(batch_words)
-    print(f"   🔄 Processing batch {batch_num} ({batch_size} paragraphs, ~{approx_tokens} tokens)...")
-
-    try:
-        ents, reason = safe_ner_process(batch_text)
-        ner_stats["batches_processed"] += 1
-        ner_stats["paragraphs_processed"] += batch_size
-
-        if reason == "too_short":
-            ner_stats["skipped_too_short"] += 1
-            return
-        if reason == "gliner_bug_empty":
-            ner_stats["skipped_gliner_bug"] += 1
-            return
-
-        for ent in ents:
-            label = (getattr(ent, "label_", None) or "").strip()
-            text = (getattr(ent, "text", None) or "").strip()
-            if not label or not text:
-                continue
-
-            start_time, end_time = map_entity_to_time(ent.start_char, ent.end_char, batch_spans)
-            if start_time is None or end_time is None:
-                continue
-
-            all_entities.append(
-                {
-                    "text": text,
-                    "label": label,
-                    "start_time": float(start_time),
-                    "end_time": float(end_time),
-                    "char_start": ent.start_char,
-                    "char_end": ent.end_char,
-                }
-            )
-            ner_stats["entities_found"] += 1
-    except Exception as exc:
-        print(f"      ⚠️  NER error in batch {batch_num}: {exc}")
-        ner_stats["errors"] += 1
-
-
-def _run_dynamic_ner(sections: List[Dict[str, Any]], run_ner: bool) -> tuple[List[Dict[str, Any]], Dict[str, int]]:
-    print("\n🏷️  Running NER with dynamic batching...")
-    all_entities: List[Dict[str, Any]] = []
-    ner_stats = _empty_ner_stats()
+def _run_dynamic_ner(
+    sections: List[Dict[str, Any]],
+    run_ner: bool,
+    ner_labels: List[str],
+) -> tuple[List[Dict[str, Any]], Dict[str, int]]:
+    print("\n🏷️  Running NER with Claude...")
 
     if not run_ner:
         print(f"   ⏭️  NER skipped (run_ner={run_ner})")
-        return all_entities, ner_stats
+        return [], empty_ner_stats()
 
-    safe_token_limit = get_safe_token_limit(default_fallback=300)
-    print(f"   📏 NER safe token limit: {safe_token_limit}")
+    if not ner_labels:
+        print("   ⏭️  NER skipped (no labels configured)")
+        return [], empty_ner_stats()
 
-    all_paragraphs = _collect_ner_paragraphs(sections, safe_token_limit)
-    current_batch: List[Dict[str, Any]] = []
-    batch_num = 0
+    print(f"   🏷️  Using {len(ner_labels)} NER labels: {ner_labels}")
+    print(f"   🤖 Model: {Config.NER_MODEL}")
 
-    for para_info in all_paragraphs:
-        para_text = words_to_text(para_info["words"])
-        estimated_tokens = len(para_text.split()) * 1.3
-        current_batch_tokens = sum(len(words_to_text(p["words"]).split()) * 1.3 for p in current_batch)
-
-        if current_batch and (current_batch_tokens + estimated_tokens) > safe_token_limit:
-            batch_num += 1
-            batch_text = " ".join(words_to_text(p["words"]) for p in current_batch)
-            batch_all_words = [w for p in current_batch for w in p["words"]]
-            _append_batch_entities(
-                batch_text,
-                batch_all_words,
-                len(current_batch),
-                batch_num,
-                int(current_batch_tokens),
-                all_entities,
-                ner_stats,
-            )
-            current_batch = []
-
-        current_batch.append(para_info)
-
-    if current_batch:
-        batch_num += 1
-        current_batch_tokens = sum(len(words_to_text(p["words"]).split()) * 1.3 for p in current_batch)
-        batch_text = " ".join(words_to_text(p["words"]) for p in current_batch)
-        batch_all_words = [w for p in current_batch for w in p["words"]]
-        _append_batch_entities(
-            batch_text,
-            batch_all_words,
-            len(current_batch),
-            batch_num,
-            int(current_batch_tokens),
-            all_entities,
-            ner_stats,
-        )
-
-    print(f"   ✅ Total entities found: {len(all_entities)} across {batch_num} batches")
+    all_entities, ner_stats = extract_entities(sections, ner_labels)
+    print(
+        f"   ✅ {ner_stats['canonical_entities']} distinct entities, "
+        f"{len(all_entities)} occurrences across {ner_stats['windows_processed']} windows"
+    )
     return all_entities, ner_stats
 
 
@@ -495,7 +371,7 @@ async def process_story(
             folder_meta,
             speakers,
         )
-        all_entities, ner_stats = _run_dynamic_ner(sections, run_ner)
+        all_entities, ner_stats = _run_dynamic_ner(sections, run_ner, get_ner_labels())
         
         # STEP 2: Process chunking by sections
         print(
@@ -546,15 +422,20 @@ async def process_story(
         
         print(f"\n✅ CHUNKING COMPLETED: {len(chunks_objects)} total chunks")
         print(f"\n📊 NER Statistics:")
-        print(f"   - Batches processed: {ner_stats['batches_processed']}")
+        print(f"   - Windows processed: {ner_stats['windows_processed']}")
         print(f"   - Paragraphs processed: {ner_stats['paragraphs_processed']}")
-        print(f"   - Total entities found: {ner_stats['entities_found']}")
+        print(f"   - Distinct entities: {ner_stats['canonical_entities']}")
+        print(f"   - Total occurrences found: {ner_stats['entities_found']}")
+        print(
+            f"   - Tokens: {ner_stats['input_tokens']} in / "
+            f"{ner_stats['output_tokens']} out"
+        )
         if all_entities:
             print(f"   - Unique entity types: {len(set(ent['label'] for ent in all_entities))}")
-        if ner_stats['skipped_too_short'] > 0:
-            print(f"   - Skipped (text too short): {ner_stats['skipped_too_short']}")
-        if ner_stats['skipped_gliner_bug'] > 0:
-            print(f"   - Skipped (GLiNER bug): {ner_stats['skipped_gliner_bug']}")
+        if ner_stats['empty_results'] > 0:
+            print(f"   - Windows with no entities: {ner_stats['empty_results']}")
+        if ner_stats['refusals'] > 0:
+            print(f"   - Windows refused by the model: {ner_stats['refusals']}")
         if ner_stats['errors'] > 0:
             print(f"   - Errors: {ner_stats['errors']}")
         
@@ -643,13 +524,14 @@ async def health():
     return {
         "ok": True,
         "weaviate_url": Config.WEAVIATE_URL,
-        "gliner_model": Config.GLINER_MODEL,
+        "ner_provider": Config.NER_PROVIDER,
+        "ner_model": Config.NER_MODEL,
         "embedding_model": Config.EMBEDDING_MODEL,
         "embedding_loaded": LocalEmbedding.is_loaded(),
         "embedding_dimension": (
             LocalEmbedding.get_embedding_dimension() if LocalEmbedding.is_loaded() else None
         ),
         "use_gpu": Config.USE_GPU,
-        "labels_count": len(NER_LABELS),
+        "labels_count": len(get_ner_labels()),
         "min_text_length_for_ner": Config.MIN_TEXT_LENGTH_FOR_NER,
     }

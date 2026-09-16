@@ -26,13 +26,14 @@ General utility functions used across the application.
 
 ### `ner_processor.py`
 
-Named Entity Recognition processing with GLiNER and spaCy.
+Named Entity Recognition using Claude.
 
-- `gliner_custom_component`: spaCy pipeline component for GLiNER
-- `ensure_ner_pipe()`: Pipeline initialization
-- `safe_ner_process()`: Robust NER processing with error handling
-- `build_word_char_spans()`: Character span building for words
-- `map_entity_to_time()`: Map entities to time ranges
+- `extract_entities()`: Entry point - windows a transcript, extracts, and locates
+- `build_windows()`: Group paragraphs into ~`NER_WORDS_PER_WINDOW` word windows
+- `extract_window_entities()`: One Claude call returning canonical entities + aliases
+- `merge_entities()`: Deduplicate across windows, resolving label disagreement by vote
+- `locate_occurrences()`: Find every surface form in the word stream, longest first
+- `parse_entity_json()`: Tolerant parsing of the model's JSON array
 
 ### `sentence_chunker.py`
 
@@ -78,7 +79,8 @@ See `.env.example` for all available configuration options:
 
 - **Weaviate**: `WEAVIATE_HOST_URL`, `WEAVIATE_PORT`, `WEAVIATE_SECURE`
 - **Chunking**: `SENTENCE_CHUNK_SIZE`, `SENTENCE_OVERLAP`
-- **NER**: `NER_LABELS`, `GLINER_MODEL`, `GLINER_THRESHOLD`, `MIN_TEXT_LENGTH_FOR_NER`
+- **NER**: `NER_LABELS`, `NER_MODEL`, `NER_PROVIDER_API_KEY`, `NER_WORDS_PER_WINDOW`,
+  `NER_WINDOW_CONCURRENCY`, `NER_EFFORT`, `NER_STOPLIST`, `MIN_TEXT_LENGTH_FOR_NER`
 - **Embeddings**: `EMBEDDING_MODEL`, `EMBEDDING_LOAD_TIMEOUT_SECONDS`, `USE_GPU`
 - **Config**: `CONFIG_PATH`
 

@@ -9,10 +9,16 @@ httpx
 pydantic
 
 # NLP
-gliner-spacy
+# Pinned to the 3.x line: spacy 4 conflicts with sentence-transformers here.
+# Previously came in transitively via gliner-spacy.
+spacy>=3.8,<4
+
+# NER (Claude)
+anthropic
 
 # Local Embeddings
 sentence-transformers>=2.2.0
+# Installed from the PyTorch CPU index in the Dockerfile - see the note there.
 torch>=2.0.0
 
 python-dotenv==1.0.1
