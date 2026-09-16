@@ -34,8 +34,13 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  // suppressHydrationWarning on <html>: browser extensions (password managers,
+  // screen recorders, translation tools) inject attributes onto <html> before
+  // React hydrates, which React would otherwise report as a mismatch. Same
+  // reason <body> already carries it. It only suppresses attribute diffs on
+  // that element itself, not on anything nested inside it.
   return (
-    <html className=" overflow-x-hidden" lang="en">
+    <html className=" overflow-x-hidden" lang="en" suppressHydrationWarning>
       <body suppressHydrationWarning>
         <MaterialUIThemeProvider>
           <Suspense>
