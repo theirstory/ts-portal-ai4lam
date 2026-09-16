@@ -5,6 +5,7 @@ import { useThreshold } from '@/app/stores/useThreshold';
 import { PAGINATION_ITEMS_PER_PAGE } from '@/app/constants';
 import { SchemaTypes } from '@/types/weaviate';
 import { SearchType } from '@/types/searchType';
+import { NerEntityFilter } from '@/types/ner';
 import { returnedFields } from '@/components/SearchBox';
 import { STORIES_RETURN_PROPERTIES } from '@/app/constants';
 
@@ -28,10 +29,14 @@ export const useRefreshFilteredResults = () => {
     runVectorSearch,
     run25bmSearch,
     setCurrentPage,
+    selectedNerEntities,
   } = useSemanticSearchStore();
   const { minValue, maxValue } = useThreshold();
 
-  return (nextNerFilters: string[] = nerFilters) => {
+  return (
+    nextNerFilters: string[] = nerFilters,
+    nextNerEntities: NerEntityFilter[] = selectedNerEntities,
+  ) => {
     setCurrentPage(1);
 
     if (!hasSearched) {
@@ -39,7 +44,14 @@ export const useRefreshFilteredResults = () => {
       // and label filters narrow it server-side.
       clearSearch();
       // Collection and folder filters are read from the store by getAllStories.
-      getAllStories(SchemaTypes.Testimonies, [...STORIES_RETURN_PROPERTIES], PAGINATION_ITEMS_PER_PAGE, 0, nextNerFilters);
+      getAllStories(
+        SchemaTypes.Testimonies,
+        [...STORIES_RETURN_PROPERTIES],
+        PAGINATION_ITEMS_PER_PAGE,
+        0,
+        nextNerFilters,
+        nextNerEntities,
+      );
       return;
     }
 

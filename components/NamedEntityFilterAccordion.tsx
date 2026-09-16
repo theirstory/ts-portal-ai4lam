@@ -20,7 +20,7 @@ import { useRefreshFilteredResults } from '@/app/hooks/useRefreshFilteredResults
 import { getNerColor, getNerDisplayName } from '@/config/organizationConfig';
 import { SearchType } from '@/types/searchType';
 import { colors } from '@/lib/theme';
-import { NER_ENTITY_DISPLAY_PAGE_SIZE } from '@/app/constants';
+import { NER_ENTITY_SAMPLE_SIZE } from '@/app/constants';
 import { FilterAccordionHeader } from './FilterAccordionHeader';
 
 // Compact sizing only — no color overrides, so this keeps whatever
@@ -52,8 +52,9 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
     searchType,
     selectedCollectionIds,
     selectedFolderIds,
-    selectedNerEntity,
-    setSelectedNerEntity,
+    selectedNerEntities,
+    toggleNerEntity,
+    clearNerEntities,
     loadNerEntityOptions,
     nerEntityOptionsByLabel,
     nerEntityOptionsHasMoreByLabel,
@@ -84,17 +85,23 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
     refreshResults(next);
   };
 
+  const selectedEntityKeys = useMemo(
+    () => new Set(selectedNerEntities.map((entity) => `${entity.label}:${entity.text.toLowerCase()}`)),
+    [selectedNerEntities],
+  );
+
   const toggleEntity = (label: string, text: string) => {
-    const isActive = selectedNerEntity?.label === label && selectedNerEntity.text === text;
-    setSelectedNerEntity(isActive ? null : { label, text });
-    refreshResults(nerFilters);
+    // toggleNerEntity returns the next selection, since the store setter has
+    // not applied yet in this tick.
+    const next = toggleNerEntity({ label, text });
+    refreshResults(nerFilters, next);
   };
 
   const clearSubjects = () => {
-    setSelectedNerEntity(null);
+    clearNerEntities();
     setNerFilters([]);
     setNerSearchTerm('');
-    refreshResults([]);
+    refreshResults([], []);
   };
 
   const previousNerOptionDepsRef = useRef<{
@@ -185,7 +192,7 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
             const matchingEntities = (nerEntityOptionsByLabel[id] ?? []).filter((entity) =>
               entity.text.toLowerCase().includes(entityQuery),
             );
-            const visibleCount = nerEntityOptionsVisibleCountByLabel[id] ?? NER_ENTITY_DISPLAY_PAGE_SIZE;
+            const visibleCount = nerEntityOptionsVisibleCountByLabel[id] ?? NER_ENTITY_SAMPLE_SIZE;
             const visibleEntities = entityQuery ? matchingEntities : matchingEntities.slice(0, visibleCount);
             const canShowMore =
               !entityQuery && (matchingEntities.length > visibleCount || nerEntityOptionsHasMoreByLabel[id]);
@@ -237,8 +244,7 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
                 <Collapse in={showEntityList} timeout={200} unmountOnExit>
                   <Box sx={{ ml: 4.8, mt: 0.25, mb: 0.5, display: 'flex', flexDirection: 'column', gap: 0.25 }}>
                     {visibleEntities.map((entity) => {
-                      const isActive =
-                        selectedNerEntity?.label === entity.label && selectedNerEntity.text === entity.text;
+                      const isActive = selectedEntityKeys.has(`${entity.label}:${entity.text.toLowerCase()}`);
                       return (
                         <Box
                           key={`${entity.label}-${entity.text}`}

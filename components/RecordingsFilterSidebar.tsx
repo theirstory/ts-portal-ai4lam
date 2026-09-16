@@ -30,8 +30,8 @@ export const RecordingsFilterSidebar = () => {
     availableNerLabelCounts,
     availableNerLabelsLoaded,
     loadAvailableNerLabels,
-    selectedNerEntity,
-    setSelectedNerEntity,
+    selectedNerEntities,
+    clearNerEntities,
   } = useSemanticSearchStore();
   const refreshResults = useRefreshFilteredResults();
 
@@ -56,10 +56,10 @@ export const RecordingsFilterSidebar = () => {
 
   const clearAllFilters = () => {
     setSelectedCollectionIds([]);
-    setSelectedNerEntity(null);
+    clearNerEntities();
     setNerFilters([]);
     setNerSearchTerm('');
-    refreshResults([]);
+    refreshResults([], []);
   };
 
   if (!stories?.objects.length) {
@@ -67,7 +67,7 @@ export const RecordingsFilterSidebar = () => {
   }
 
   const hasFilters = hasMultipleCollections || nerIds.length > 0;
-  const activeFilterCount = selectedCollectionIds.length + nerFilters.length + (selectedNerEntity ? 1 : 0);
+  const activeFilterCount = selectedCollectionIds.length + nerFilters.length + selectedNerEntities.length;
 
   const ghostButtonSx = {
     textTransform: 'none' as const,

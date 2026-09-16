@@ -2,7 +2,13 @@ export const MIN_SCORE_THRESHOLD = 0.5;
 
 export const PAGINATION_ITEMS_PER_PAGE = 10;
 
-/** Entities shown per label before the "show more" control appears. */
+/**
+ * Entities shown under a freshly checked label — a sample of the most frequent
+ * ones rather than the whole list, which runs to 150+ for a common label.
+ */
+export const NER_ENTITY_SAMPLE_SIZE = 3;
+
+/** How many more "Show more" reveals each time. */
 export const NER_ENTITY_DISPLAY_PAGE_SIZE = 20;
 
 /** Testimony fields the recordings list needs. */

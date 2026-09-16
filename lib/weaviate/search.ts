@@ -176,10 +176,22 @@ export async function getAllStoriesFromCollection<T extends SchemaTypes>(
   collectionFilters?: string[],
   folderFilters?: string[],
   nerFilters?: string[],
+  /** Restrict to these recordings, e.g. the ones matching selected entities. */
+  recordingIds?: string[],
 ) {
   const client = await initWeaviateClient();
   const myCollection = client.collections.get<SchemaMap[T]>(collection);
-  const combinedFilter = buildCombinedFilters(myCollection, nerFilters, collectionFilters, folderFilters);
+  const propertyFilter = buildCombinedFilters(myCollection, nerFilters, collectionFilters, folderFilters);
+
+  let combinedFilter = propertyFilter;
+  if (recordingIds) {
+    // An empty list means the entity selection matched nothing, which must
+    // return nothing rather than silently falling back to every recording.
+    const idFilter = myCollection.filter.byId().containsAny(recordingIds.length ? recordingIds : ['__none__']);
+    combinedFilter = propertyFilter
+      ? ({ operator: 'And', filters: [propertyFilter, idFilter], value: true } as FilterValue)
+      : idFilter;
+  }
 
   const response = await myCollection.query.fetchObjects({
     limit,
@@ -694,7 +706,7 @@ export async function getNerEntityRecordingCounts(
 const NER_DATA_RETURN_PROPS = [
   { name: 'ner_data', properties: ['text', 'label', 'start_time', 'end_time'] },
 ] as unknown as QueryProperty<Testimonies>[];
-const NER_ENTITY_CHUNK_TEXT_PROPS: QueryProperty<Chunks>[] = ['ner_text', 'theirstory_id'];
+const NER_ENTITY_CHUNK_TEXT_PROPS: QueryProperty<Chunks>[] = ['ner_text', 'ner_labels', 'theirstory_id'];
 const NER_ENTITY_CHUNK_RETURN_PROPS: QueryProperty<Chunks>[] = ['theirstory_id', 'start_time', 'end_time'];
 
 /** Testimonies scanned per batch while discovering the entities for a label. */
@@ -1076,4 +1088,74 @@ export async function getAvailableNerLabelStats(
     labels: Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b)),
     counts,
   };
+}
+
+const NER_ENTITY_RECORDING_BATCH_SIZE = 500;
+
+/**
+ * Recordings containing any of the given entities.
+ *
+ * Entity text lives on Chunks, not Testimonies, so selecting entities means
+ * resolving matching chunks to their recordings first. Multiple entities are
+ * OR'd: picking "Whisper" and "ASR" returns recordings mentioning either, which
+ * is what a multi-select facet is expected to do.
+ */
+export async function getRecordingIdsForNerEntities(
+  entities: { label: string; text: string }[],
+  collectionFilters?: string[],
+  folderFilters?: string[],
+): Promise<string[]> {
+  if (entities.length === 0) return [];
+
+  const client = await initWeaviateClient();
+  const myCollection = client.collections.get<Chunks>('Chunks');
+  const byProperty = getByPropertyFilter(myCollection);
+
+  const filtersArray: FilterValue[] = [
+    byProperty('ner_text').containsAny(entities.map((entity) => entity.text.toLowerCase())),
+    byProperty('ner_labels').containsAny([...new Set(entities.map((entity) => entity.label))]),
+  ];
+  if (collectionFilters?.length) {
+    filtersArray.push(byProperty('collection_id').containsAny(collectionFilters));
+  }
+  if (folderFilters?.length) {
+    filtersArray.push(byProperty('folder_id').containsAny(folderFilters));
+  }
+  const combinedFilter: FilterValue = { operator: 'And', filters: filtersArray, value: true };
+
+  const wanted = new Set(entities.map((entity) => `${entity.label}:${entity.text.toLowerCase()}`));
+  const recordingIds = new Set<string>();
+  let offset = 0;
+
+  for (;;) {
+    const response = await myCollection.query.fetchObjects({
+      limit: NER_ENTITY_RECORDING_BATCH_SIZE,
+      offset,
+      filters: combinedFilter,
+      returnProperties: NER_ENTITY_CHUNK_TEXT_PROPS,
+    });
+
+    response.objects.forEach((chunk) => {
+      const props = chunk.properties as Partial<Chunks> | undefined;
+      const recordingId = props?.theirstory_id;
+      const nerText = props?.ner_text;
+      if (!recordingId || !Array.isArray(nerText)) return;
+
+      // containsAny matches text and label independently, so a chunk could
+      // carry "Whisper" under one label and the wanted label from a different
+      // entity. Confirm the pairing before accepting the recording.
+      const labels = Array.isArray(props?.ner_labels) ? (props.ner_labels as string[]) : [];
+      const hasPair = nerText.some(
+        (value) =>
+          typeof value === 'string' &&
+          labels.some((label) => wanted.has(`${label}:${value.trim().toLowerCase()}`)),
+      );
+      if (hasPair) recordingIds.add(recordingId);
+    });
+
+    if (response.objects.length < NER_ENTITY_RECORDING_BATCH_SIZE) break;
+    offset += response.objects.length;
+  }
+
+  return [...recordingIds];
 }

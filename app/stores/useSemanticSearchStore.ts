@@ -10,6 +10,7 @@ import {
   getAllStoriesFromCollection,
   getAvailableNerLabelStats,
   getNerEntityOptionsForLabel,
+  getRecordingIdsForNerEntities,
   getStoryByUuid,
   hybridSearch,
   hybridSearchForStoryId,
@@ -20,7 +21,7 @@ import {
 } from '@/lib/weaviate/search';
 import { Chunks, Testimonies, SchemaMap, SchemaTypes } from '@/types/weaviate';
 import { NerEntityFilter, NerEntityOption, NerLabel } from '@/types/ner';
-import { NER_ENTITY_DISPLAY_PAGE_SIZE } from '@/app/constants';
+import { NER_ENTITY_DISPLAY_PAGE_SIZE, NER_ENTITY_SAMPLE_SIZE } from '@/app/constants';
 import { SearchType } from '@/types/searchType';
 import { Transcription, Word } from '@/types/transcription';
 
@@ -63,8 +64,8 @@ type SemanticSearchStore = {
   loadAvailableNerLabels: () => Promise<void>;
   /** Free-text filter over the label list and loaded entity names. */
   nerSearchTerm: string;
-  /** The single entity currently being browsed, if any. */
-  selectedNerEntity: NerEntityFilter | null;
+  /** Entities currently being browsed. Multiple are OR'd together. */
+  selectedNerEntities: NerEntityFilter[];
   nerEntityOptionsByLabel: Record<string, NerEntityOption[]>;
   nerEntityOptionsHasMoreByLabel: Record<string, boolean>;
   nerEntityOptionsLoadingByLabel: Record<string, boolean>;
@@ -72,7 +73,8 @@ type SemanticSearchStore = {
   /** How many of a label's loaded entities are shown before "Show more". */
   nerEntityOptionsVisibleCountByLabel: Record<string, number>;
   setNerSearchTerm: (term: string) => void;
-  setSelectedNerEntity: (entity: NerEntityFilter | null) => void;
+  toggleNerEntity: (entity: NerEntityFilter) => NerEntityFilter[];
+  clearNerEntities: () => void;
   loadNerEntityOptions: (label: string, append?: boolean, minValue?: number, maxValue?: number) => Promise<void>;
   collections: CollectionFilterOption[];
   folders: FolderFilterOption[];
@@ -96,6 +98,7 @@ type SemanticSearchStore = {
     limit?: number,
     offset?: number,
     nerFilters?: string[],
+    nerEntities?: NerEntityFilter[],
   ) => Promise<void>;
   getStoryByUuid: (uuid: string) => Promise<void>;
   getStoryTranscriptByUuid: (uuid: string) => Promise<void>;
@@ -210,7 +213,7 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       availableNerLabelCounts: {},
       availableNerLabelsLoaded: false,
       nerSearchTerm: '',
-      selectedNerEntity: null,
+      selectedNerEntities: [],
       nerEntityOptionsByLabel: {},
       nerEntityOptionsHasMoreByLabel: {},
       nerEntityOptionsLoadingByLabel: {},
@@ -318,10 +321,17 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
         // Browsing by label narrows the recordings list itself; searching goes
         // through the chunk searches instead.
         nerFilters?: string[],
+        nerEntities?: NerEntityFilter[],
       ) => {
         const { selectedCollectionIds, selectedFolderIds } = get();
         set({ loading: true }, false, 'getAllStories:start');
         try {
+          // Entity text lives on Chunks, so an entity selection has to be
+          // resolved to recordings before the testimony query can use it.
+          const recordingIds = nerEntities?.length
+            ? await getRecordingIdsForNerEntities(nerEntities, selectedCollectionIds, selectedFolderIds)
+            : undefined;
+
           const stories = await getAllStoriesFromCollection(
             collection,
             returnProperties,
@@ -330,6 +340,7 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
             selectedCollectionIds,
             selectedFolderIds,
             nerFilters,
+            recordingIds,
           );
           let hasNextStoriesPage = false;
           if ((stories?.objects?.length ?? 0) === limit) {
@@ -718,8 +729,21 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
 
       setNerSearchTerm: (nerSearchTerm) => set({ nerSearchTerm }, false, 'setNerSearchTerm'),
 
-      setSelectedNerEntity: (selectedNerEntity) =>
-        set({ selectedNerEntity }, false, 'setSelectedNerEntity'),
+      /** Returns the next selection so callers can refresh without waiting a tick. */
+      toggleNerEntity: (entity) => {
+        const { selectedNerEntities } = get();
+        const key = `${entity.label}:${entity.text.toLowerCase()}`;
+        const isSelected = selectedNerEntities.some(
+          (current) => `${current.label}:${current.text.toLowerCase()}` === key,
+        );
+        const next = isSelected
+          ? selectedNerEntities.filter((current) => `${current.label}:${current.text.toLowerCase()}` !== key)
+          : [...selectedNerEntities, entity];
+        set({ selectedNerEntities: next }, false, 'toggleNerEntity');
+        return next;
+      },
+
+      clearNerEntities: () => set({ selectedNerEntities: [] }, false, 'clearNerEntities'),
 
       /**
        * Loads the distinct entities recorded under one label. `append` drives
@@ -741,7 +765,7 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
 
         if (append) {
           const stored = nerEntityOptionsByLabel[label] ?? [];
-          const visibleCount = nerEntityOptionsVisibleCountByLabel[label] ?? NER_ENTITY_DISPLAY_PAGE_SIZE;
+          const visibleCount = nerEntityOptionsVisibleCountByLabel[label] ?? NER_ENTITY_SAMPLE_SIZE;
           if (visibleCount < stored.length) {
             set(
               {
@@ -791,7 +815,7 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
           });
 
           const currentVisibleCount =
-            get().nerEntityOptionsVisibleCountByLabel[label] ?? NER_ENTITY_DISPLAY_PAGE_SIZE;
+            get().nerEntityOptionsVisibleCountByLabel[label] ?? NER_ENTITY_SAMPLE_SIZE;
 
           set(
             {
@@ -811,7 +835,7 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
               },
               nerEntityOptionsVisibleCountByLabel: {
                 ...get().nerEntityOptionsVisibleCountByLabel,
-                [label]: append ? currentVisibleCount + NER_ENTITY_DISPLAY_PAGE_SIZE : NER_ENTITY_DISPLAY_PAGE_SIZE,
+                [label]: append ? currentVisibleCount + NER_ENTITY_DISPLAY_PAGE_SIZE : NER_ENTITY_SAMPLE_SIZE,
               },
               nerEntityOptionsLoadingByLabel: {
                 ...get().nerEntityOptionsLoadingByLabel,
