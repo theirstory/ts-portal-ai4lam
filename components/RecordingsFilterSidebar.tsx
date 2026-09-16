@@ -22,12 +22,11 @@ export const RecordingsFilterSidebar = () => {
     collections,
     selectedCollectionIds,
     setSelectedCollectionIds,
-    nerFilters,
-    setNerFilters,
     setNerSearchTerm,
+    setExpandedNerLabels,
     stories,
     availableNerLabels,
-    availableNerLabelCounts,
+    availableNerEntityCounts,
     availableNerLabelsLoaded,
     loadAvailableNerLabels,
     selectedNerEntities,
@@ -50,16 +49,18 @@ export const RecordingsFilterSidebar = () => {
       // ones this archive actually contains, so a filter can never be a
       // control that only ever returns nothing. A label already checked stays
       // visible so it can be unchecked.
-      .filter((id) => !availableNerLabelsLoaded || availableNerLabelSet.has(id) || nerFilters.includes(id))
-      .sort((a, b) => (availableNerLabelCounts[b] ?? 0) - (availableNerLabelCounts[a] ?? 0) || a.localeCompare(b));
-  }, [availableNerLabelCounts, availableNerLabelSet, availableNerLabelsLoaded, nerFilters]);
+      .filter((id) => !availableNerLabelsLoaded || availableNerLabelSet.has(id))
+      // Ordered by how many distinct entities each holds, which is what opening
+      // one reveals and what the count beside it reports.
+      .sort((a, b) => (availableNerEntityCounts[b] ?? 0) - (availableNerEntityCounts[a] ?? 0) || a.localeCompare(b));
+  }, [availableNerEntityCounts, availableNerLabelSet, availableNerLabelsLoaded]);
 
   const clearAllFilters = () => {
     setSelectedCollectionIds([]);
     clearNerEntities();
-    setNerFilters([]);
     setNerSearchTerm('');
-    refreshResults([], []);
+    setExpandedNerLabels([]);
+    refreshResults(undefined, []);
   };
 
   if (!stories?.objects.length) {
@@ -67,7 +68,7 @@ export const RecordingsFilterSidebar = () => {
   }
 
   const hasFilters = hasMultipleCollections || nerIds.length > 0;
-  const activeFilterCount = selectedCollectionIds.length + nerFilters.length + selectedNerEntities.length;
+  const activeFilterCount = selectedCollectionIds.length + selectedNerEntities.length;
 
   const ghostButtonSx = {
     textTransform: 'none' as const,

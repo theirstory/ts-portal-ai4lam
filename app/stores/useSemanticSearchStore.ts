@@ -60,6 +60,12 @@ type SemanticSearchStore = {
   availableNerLabels: string[];
   /** Recordings carrying each label. */
   availableNerLabelCounts: Record<string, number>;
+  /** Distinct entities under each label — what the sidebar shows beside a label. */
+  availableNerEntityCounts: Record<string, number>;
+  /** Labels whose entity list is expanded in the sidebar. */
+  expandedNerLabels: string[];
+  toggleExpandedNerLabel: (label: string) => string[];
+  setExpandedNerLabels: (labels: string[]) => void;
   availableNerLabelsLoaded: boolean;
   loadAvailableNerLabels: () => Promise<void>;
   /** Free-text filter over the label list and loaded entity names. */
@@ -211,6 +217,8 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       nerFilters: [],
       availableNerLabels: [],
       availableNerLabelCounts: {},
+      availableNerEntityCounts: {},
+      expandedNerLabels: [],
       availableNerLabelsLoaded: false,
       nerSearchTerm: '',
       selectedNerEntities: [],
@@ -716,9 +724,14 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       loadAvailableNerLabels: async () => {
         if (get().availableNerLabelsLoaded) return;
         try {
-          const { labels, counts } = await getAvailableNerLabelStats();
+          const { labels, counts, entityCounts } = await getAvailableNerLabelStats();
           set(
-            { availableNerLabels: labels, availableNerLabelCounts: counts, availableNerLabelsLoaded: true },
+            {
+              availableNerLabels: labels,
+              availableNerLabelCounts: counts,
+              availableNerEntityCounts: entityCounts,
+              availableNerLabelsLoaded: true,
+            },
             false,
             'loadAvailableNerLabels',
           );
@@ -744,6 +757,19 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       },
 
       clearNerEntities: () => set({ selectedNerEntities: [] }, false, 'clearNerEntities'),
+
+      /** Returns the next expansion so callers can act without waiting a tick. */
+      toggleExpandedNerLabel: (label) => {
+        const { expandedNerLabels } = get();
+        const next = expandedNerLabels.includes(label)
+          ? expandedNerLabels.filter((id) => id !== label)
+          : [...expandedNerLabels, label];
+        set({ expandedNerLabels: next }, false, 'toggleExpandedNerLabel');
+        return next;
+      },
+
+      setExpandedNerLabels: (expandedNerLabels) =>
+        set({ expandedNerLabels }, false, 'setExpandedNerLabels'),
 
       /**
        * Loads the distinct entities recorded under one label. `append` drives

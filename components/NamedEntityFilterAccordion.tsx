@@ -10,17 +10,19 @@ import {
   Checkbox,
   CircularProgress,
   Collapse,
+  IconButton,
   TextField,
   Typography,
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 import { useThreshold } from '@/app/stores/useThreshold';
 import { useRefreshFilteredResults } from '@/app/hooks/useRefreshFilteredResults';
 import { getNerColor, getNerDisplayName } from '@/config/organizationConfig';
-import { SearchType } from '@/types/searchType';
 import { colors } from '@/lib/theme';
 import { NER_ENTITY_SAMPLE_SIZE } from '@/app/constants';
+import { NerEntityOption } from '@/types/ner';
 import { FilterAccordionHeader } from './FilterAccordionHeader';
 
 // Compact sizing only — no color overrides, so this keeps whatever
@@ -38,14 +40,15 @@ interface Props {
 }
 
 /**
- * "Named Entities" section of the recordings filter sidebar — the label
- * checkboxes plus, for each checked label, its entity picker (Technology:
- * "Whisper", Organization: "Library of Congress", ...) with "Show more".
+ * "Named Entities" section of the recordings filter sidebar.
+ *
+ * A label is a group you open, not a filter you apply — filtering happens by
+ * ticking the entities underneath, which multi-select and OR together. The
+ * count beside a label is how many distinct entities it holds, since that is
+ * what opening it reveals.
  */
 export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
   const {
-    nerFilters,
-    setNerFilters,
     nerSearchTerm,
     setNerSearchTerm,
     searchTerm,
@@ -55,103 +58,132 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
     selectedNerEntities,
     toggleNerEntity,
     clearNerEntities,
+    expandedNerLabels,
+    toggleExpandedNerLabel,
+    setExpandedNerLabels,
     loadNerEntityOptions,
     nerEntityOptionsByLabel,
     nerEntityOptionsHasMoreByLabel,
     nerEntityOptionsLoadingByLabel,
     nerEntityOptionsVisibleCountByLabel,
-    availableNerLabelCounts,
+    availableNerEntityCounts,
   } = useSemanticSearchStore();
   const { minValue, maxValue } = useThreshold();
   const refreshResults = useRefreshFilteredResults();
 
-  const filteredNerIds = useMemo(() => {
-    const query = nerSearchTerm.trim().toLowerCase();
-    if (!query) return nerIds;
-    return nerIds.filter((id) => {
-      const displayName = getNerDisplayName(id).toLowerCase();
-      if (id.toLowerCase().includes(query) || displayName.includes(query)) return true;
-      // Only match against loaded entity text for labels that are checked —
-      // otherwise a stale cache from a previously-checked label would surface
-      // an unchecked one whose entity list isn't even visible.
-      if (!nerFilters.includes(id)) return false;
-      return (nerEntityOptionsByLabel[id] ?? []).some((entity) => entity.text.toLowerCase().includes(query));
-    });
-  }, [nerEntityOptionsByLabel, nerFilters, nerIds, nerSearchTerm]);
-
-  const toggleSubject = (nerId: string) => {
-    const next = nerFilters.includes(nerId) ? nerFilters.filter((id) => id !== nerId) : [...nerFilters, nerId];
-    setNerFilters(next);
-    refreshResults(next);
-  };
+  const entityQuery = nerSearchTerm.trim().toLowerCase();
 
   const selectedEntityKeys = useMemo(
     () => new Set(selectedNerEntities.map((entity) => `${entity.label}:${entity.text.toLowerCase()}`)),
     [selectedNerEntities],
   );
 
-  const toggleEntity = (label: string, text: string) => {
-    // toggleNerEntity returns the next selection, since the store setter has
-    // not applied yet in this tick.
-    const next = toggleNerEntity({ label, text });
-    refreshResults(nerFilters, next);
-  };
-
-  const clearSubjects = () => {
-    clearNerEntities();
-    setNerFilters([]);
-    setNerSearchTerm('');
-    refreshResults([], []);
-  };
-
-  const previousNerOptionDepsRef = useRef<{
-    nerFilters: string[];
-    searchTerm: string;
-    searchType: SearchType;
-    selectedCollectionIds: string[];
-    selectedFolderIds: string[];
-    minValue: number;
-    maxValue: number;
-  } | null>(null);
-
+  // Searching has to reach entities under labels that aren't open yet,
+  // otherwise the box only finds what the user has already looked at. Every
+  // label's entities load once a query is typed.
   useEffect(() => {
-    const previous = previousNerOptionDepsRef.current;
-    const otherDepsChanged =
-      previous !== null &&
-      (previous.searchTerm !== searchTerm ||
-        previous.searchType !== searchType ||
-        previous.minValue !== minValue ||
-        previous.maxValue !== maxValue ||
-        previous.selectedCollectionIds.join(',') !== selectedCollectionIds.join(',') ||
-        previous.selectedFolderIds.join(',') !== selectedFolderIds.join(','));
-
-    // Only refetch labels that are newly checked and don't already have cached
-    // options, unless something that affects every label's counts changed
-    // (search, collections, folders, threshold). Otherwise re-checking an
-    // already-loaded label needlessly refetches and flashes its spinner again.
-    nerFilters.forEach((label) => {
-      const isNewLabel = !previous?.nerFilters.includes(label);
-      const alreadyLoaded = (nerEntityOptionsByLabel[label]?.length ?? 0) > 0;
-      if (otherDepsChanged || (isNewLabel && !alreadyLoaded)) {
+    if (!entityQuery) return;
+    nerIds.forEach((label) => {
+      const loaded = (nerEntityOptionsByLabel[label]?.length ?? 0) > 0;
+      if (!loaded && !nerEntityOptionsLoadingByLabel[label]) {
         loadNerEntityOptions(label, false, minValue, maxValue);
       }
     });
-
-    previousNerOptionDepsRef.current = {
-      nerFilters,
-      searchTerm,
-      searchType,
-      selectedCollectionIds,
-      selectedFolderIds,
-      minValue,
-      maxValue,
-    };
   }, [
+    entityQuery,
     loadNerEntityOptions,
     maxValue,
     minValue,
     nerEntityOptionsByLabel,
-    nerFilters,
+    nerEntityOptionsLoadingByLabel,
+    nerIds,
+  ]);
+
+  const matchesByLabel = useMemo(() => {
+    const result: Record<string, NerEntityOption[]> = {};
+    if (!entityQuery) return result;
+    nerIds.forEach((label) => {
+      const matches = (nerEntityOptionsByLabel[label] ?? []).filter((entity) =>
+        entity.text.toLowerCase().includes(entityQuery),
+      );
+      if (matches.length) result[label] = matches;
+    });
+    return result;
+  }, [entityQuery, nerEntityOptionsByLabel, nerIds]);
+
+  const filteredNerIds = useMemo(() => {
+    if (!entityQuery) return nerIds;
+    return nerIds.filter((id) => {
+      const displayName = getNerDisplayName(id).toLowerCase();
+      if (id.toLowerCase().includes(entityQuery) || displayName.includes(entityQuery)) return true;
+      return Boolean(matchesByLabel[id]?.length);
+    });
+  }, [entityQuery, matchesByLabel, nerIds]);
+
+  // A search opens the labels that have hits, so matches aren't hidden behind a
+  // closed group. Clearing the box restores whatever was open beforehand.
+  const expansionBeforeSearchRef = useRef<string[] | null>(null);
+  const matchedLabelsKey = Object.keys(matchesByLabel).sort().join('|');
+  useEffect(() => {
+    if (entityQuery) {
+      if (expansionBeforeSearchRef.current === null) {
+        expansionBeforeSearchRef.current = expandedNerLabels;
+      }
+      const withMatches = matchedLabelsKey ? matchedLabelsKey.split('|') : [];
+      const missing = withMatches.filter((label) => !expandedNerLabels.includes(label));
+      if (missing.length) setExpandedNerLabels([...expandedNerLabels, ...missing]);
+      return;
+    }
+    if (expansionBeforeSearchRef.current !== null) {
+      setExpandedNerLabels(expansionBeforeSearchRef.current);
+      expansionBeforeSearchRef.current = null;
+    }
+    // expandedNerLabels is intentionally omitted: it is written here, and
+    // including it would re-run this on every expansion change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [entityQuery, matchedLabelsKey, setExpandedNerLabels]);
+
+  const toggleLabel = (label: string) => {
+    const next = toggleExpandedNerLabel(label);
+    if (next.includes(label) && !(nerEntityOptionsByLabel[label]?.length ?? 0)) {
+      loadNerEntityOptions(label, false, minValue, maxValue);
+    }
+  };
+
+  const toggleEntity = (label: string, text: string) => {
+    // toggleNerEntity returns the next selection, since the store setter has
+    // not applied yet in this tick.
+    const next = toggleNerEntity({ label, text });
+    refreshResults(undefined, next);
+  };
+
+  const clearSubjects = () => {
+    clearNerEntities();
+    setNerSearchTerm('');
+    setExpandedNerLabels([]);
+    refreshResults(undefined, []);
+  };
+
+  // Reload open labels when something that changes their counts changes.
+  const previousDepsRef = useRef<string | null>(null);
+  useEffect(() => {
+    const key = [
+      searchTerm,
+      searchType,
+      minValue,
+      maxValue,
+      selectedCollectionIds.join(','),
+      selectedFolderIds.join(','),
+    ].join('|');
+    if (previousDepsRef.current !== null && previousDepsRef.current !== key) {
+      expandedNerLabels.forEach((label) => loadNerEntityOptions(label, false, minValue, maxValue));
+    }
+    previousDepsRef.current = key;
+  }, [
+    expandedNerLabels,
+    loadNerEntityOptions,
+    maxValue,
+    minValue,
     searchTerm,
     searchType,
     selectedCollectionIds,
@@ -169,7 +201,7 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
       <AccordionSummary expandIcon={<ExpandMoreIcon />}>
         <FilterAccordionHeader
           title="Named Entities"
-          count={nerFilters.length}
+          count={selectedNerEntities.length}
           onClear={clearSubjects}
           ariaLabel="Clear named entity filters"
         />
@@ -186,21 +218,21 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
         />
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
           {filteredNerIds.map((id) => {
-            const hasLoadedOptions = (nerEntityOptionsByLabel[id]?.length ?? 0) > 0;
-            const showEntityList = nerFilters.includes(id) && (hasLoadedOptions || !nerEntityOptionsLoadingByLabel[id]);
-            const entityQuery = nerSearchTerm.trim().toLowerCase();
-            const matchingEntities = (nerEntityOptionsByLabel[id] ?? []).filter((entity) =>
-              entity.text.toLowerCase().includes(entityQuery),
-            );
+            const isExpanded = expandedNerLabels.includes(id);
+            const allEntities = nerEntityOptionsByLabel[id] ?? [];
+            const matchingEntities = entityQuery
+              ? (matchesByLabel[id] ?? allEntities.filter((e) => e.text.toLowerCase().includes(entityQuery)))
+              : allEntities;
             const visibleCount = nerEntityOptionsVisibleCountByLabel[id] ?? NER_ENTITY_SAMPLE_SIZE;
             const visibleEntities = entityQuery ? matchingEntities : matchingEntities.slice(0, visibleCount);
             const canShowMore =
               !entityQuery && (matchingEntities.length > visibleCount || nerEntityOptionsHasMoreByLabel[id]);
+            const entityCount = availableNerEntityCounts[id] ?? allEntities.length;
 
             return (
               <Box key={id}>
                 <Box
-                  onClick={() => toggleSubject(id)}
+                  onClick={() => toggleLabel(id)}
                   sx={{
                     display: 'flex',
                     alignItems: 'center',
@@ -209,13 +241,17 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
                     borderRadius: 1,
                     '&:hover': { bgcolor: 'action.hover' },
                   }}>
-                  <Checkbox
-                    checked={nerFilters.includes(id)}
+                  <IconButton
                     size="small"
-                    inputProps={{ 'aria-label': getNerDisplayName(id) }}
-                    onClick={(event) => event.stopPropagation()}
-                    onChange={() => toggleSubject(id)}
-                  />
+                    aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${getNerDisplayName(id)}`}
+                    aria-expanded={isExpanded}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      toggleLabel(id);
+                    }}
+                    sx={{ p: 0.25 }}>
+                    {isExpanded ? <ExpandMoreIcon fontSize="small" /> : <ChevronRightIcon fontSize="small" />}
+                  </IconButton>
                   <Box
                     sx={{
                       width: 10,
@@ -226,7 +262,7 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
                     }}
                   />
                   <Typography fontSize="0.875rem" color="text.secondary">
-                    {getNerDisplayName(id)} ({availableNerLabelCounts[id] ?? 0})
+                    {getNerDisplayName(id)} ({entityCount})
                   </Typography>
                   <Box
                     sx={{
@@ -241,8 +277,8 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
                   </Box>
                 </Box>
 
-                <Collapse in={showEntityList} timeout={200} unmountOnExit>
-                  <Box sx={{ ml: 4.8, mt: 0.25, mb: 0.5, display: 'flex', flexDirection: 'column', gap: 0.25 }}>
+                <Collapse in={isExpanded} timeout={200} unmountOnExit>
+                  <Box sx={{ ml: 3.5, mt: 0.25, mb: 0.5, display: 'flex', flexDirection: 'column', gap: 0.25 }}>
                     {visibleEntities.map((entity) => {
                       const isActive = selectedEntityKeys.has(`${entity.label}:${entity.text.toLowerCase()}`);
                       return (
@@ -255,30 +291,45 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
                             justifyContent: 'space-between',
                             gap: 1,
                             minHeight: 26,
-                            px: 0.75,
-                            py: 0.25,
+                            pr: 0.75,
                             borderRadius: 1,
                             cursor: 'pointer',
                             bgcolor: isActive ? 'action.selected' : 'transparent',
                             '&:hover': { bgcolor: 'action.hover' },
                           }}>
-                          <Typography
-                            sx={{
-                              fontSize: '0.8125rem',
-                              color: isActive ? 'text.primary' : 'text.secondary',
-                              fontWeight: isActive ? 700 : 500,
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              whiteSpace: 'nowrap',
-                            }}>
-                            {entity.text}
-                          </Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, minWidth: 0 }}>
+                            <Checkbox
+                              checked={isActive}
+                              size="small"
+                              inputProps={{ 'aria-label': `${entity.text}, ${getNerDisplayName(entity.label)}` }}
+                              onClick={(event) => event.stopPropagation()}
+                              onChange={() => toggleEntity(entity.label, entity.text)}
+                              sx={{ p: 0.5 }}
+                            />
+                            <Typography
+                              sx={{
+                                fontSize: '0.8125rem',
+                                color: isActive ? 'text.primary' : 'text.secondary',
+                                fontWeight: isActive ? 700 : 500,
+                                overflow: 'hidden',
+                                textOverflow: 'ellipsis',
+                                whiteSpace: 'nowrap',
+                              }}>
+                              {entity.text}
+                            </Typography>
+                          </Box>
                           <Typography sx={{ fontSize: '0.72rem', color: 'text.disabled', flexShrink: 0 }}>
                             {entity.count}
                           </Typography>
                         </Box>
                       );
                     })}
+
+                    {!visibleEntities.length && !nerEntityOptionsLoadingByLabel[id] && (
+                      <Typography sx={{ fontSize: '0.75rem', color: 'text.disabled', px: 0.75, py: 0.5 }}>
+                        No entities
+                      </Typography>
+                    )}
 
                     {canShowMore && !nerEntityOptionsLoadingByLabel[id] && (
                       <Button

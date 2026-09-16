@@ -1053,30 +1053,49 @@ async function getNerEntityOptionsForSearch({
  * may have no instances of some of them — offering those as checkable filters
  * gives the user a control that can only ever return nothing.
  */
-export async function getAvailableNerLabelStats(
-  batchSize = 500,
-): Promise<{ labels: string[]; counts: Record<string, number> }> {
+export async function getAvailableNerLabelStats(batchSize = 500): Promise<{
+  labels: string[];
+  /** Recordings carrying each label. */
+  counts: Record<string, number>;
+  /** Distinct entities recorded under each label. */
+  entityCounts: Record<string, number>;
+}> {
   const client = await initWeaviateClient();
   const myCollection = client.collections.get<Testimonies>('Testimonies');
   const counts: Record<string, number> = {};
+  const entityTextsByLabel: Record<string, Set<string>> = {};
   let offset = 0;
 
   for (;;) {
     const response = await myCollection.query.fetchObjects({
       limit: batchSize,
       offset,
-      returnProperties: ['ner_labels'] as QueryProperty<Testimonies>[],
+      returnProperties: [
+        'ner_labels' as unknown as QueryProperty<Testimonies>,
+        ...NER_DATA_RETURN_PROPS,
+      ],
     });
 
     response.objects.forEach((item) => {
-      const labels = (item.properties as Partial<Testimonies> | undefined)?.ner_labels;
-      if (!Array.isArray(labels)) return;
+      const props = item.properties as Partial<Testimonies> | undefined;
 
-      // A recording counts once per label however many times it is mentioned.
-      new Set(
-        labels.filter((label): label is string => typeof label === 'string').map((label) => label.trim()),
-      ).forEach((label) => {
-        if (label) counts[label] = (counts[label] ?? 0) + 1;
+      const labels = props?.ner_labels;
+      if (Array.isArray(labels)) {
+        // A recording counts once per label however many times it is mentioned.
+        new Set(
+          labels.filter((label): label is string => typeof label === 'string').map((label) => label.trim()),
+        ).forEach((label) => {
+          if (label) counts[label] = (counts[label] ?? 0) + 1;
+        });
+      }
+
+      // The sidebar shows how many distinct entities a label holds, which is
+      // what the list under it will contain — not how many recordings use it.
+      normalizeTimedNerData(props?.ner_data).forEach((ner) => {
+        const label = ner.label?.trim();
+        const text = ner.text?.trim().toLowerCase();
+        if (!label || !text) return;
+        (entityTextsByLabel[label] ??= new Set()).add(text);
       });
     });
 
@@ -1084,9 +1103,16 @@ export async function getAvailableNerLabelStats(
     offset += response.objects.length;
   }
 
+  const entityCounts = Object.fromEntries(
+    Object.entries(entityTextsByLabel).map(([label, texts]) => [label, texts.size]),
+  );
+
   return {
-    labels: Object.keys(counts).sort((a, b) => counts[b] - counts[a] || a.localeCompare(b)),
+    labels: Object.keys(counts).sort(
+      (a, b) => (entityCounts[b] ?? 0) - (entityCounts[a] ?? 0) || a.localeCompare(b),
+    ),
     counts,
+    entityCounts,
   };
 }
 
