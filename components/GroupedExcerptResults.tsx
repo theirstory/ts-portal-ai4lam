@@ -244,7 +244,9 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
         return (
           <Box
             key={group.id}
-            sx={{ border: `1px solid ${colors.common.border}`, borderRadius: '8px', overflow: 'hidden' }}>
+            // No overflow clipping here: it would trap the sticky header
+            // inside the group instead of letting it pin to the scroll box.
+            sx={{ border: `1px solid ${colors.common.border}`, borderRadius: '8px' }}>
             <Box
               onClick={() => setCollapsed((current) => ({ ...current, [group.id]: !current[group.id] }))}
               sx={{
@@ -254,7 +256,17 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                 px: 1.5,
                 py: 1,
                 cursor: 'pointer',
+                // Pins while its own excerpts are on screen, so a reader deep in
+                // a long list always knows which recording they are reading and
+                // can collapse it without scrolling back up. The next group's
+                // header pushes this one away as it arrives.
+                position: 'sticky',
+                top: 0,
+                zIndex: 2,
+                borderRadius: '8px 8px 0 0',
+                // Opaque: excerpts scroll underneath it.
                 bgcolor: colors.background.subtle,
+                borderBottom: `1px solid ${colors.common.border}`,
                 '&:hover': { bgcolor: 'action.hover' },
               }}>
               <IconButton

@@ -41,6 +41,7 @@ export const returnedFields: QueryProperty<SchemaMap[SchemaTypes]>[] | undefined
   'ner_text',
   'section_title',
   'video_url',
+  'recording_date',
   'isAudioFile',
 ];
 

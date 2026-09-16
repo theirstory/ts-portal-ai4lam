@@ -6,15 +6,15 @@ import Typography from '@mui/material/Typography';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 import { CircularProgress } from '@mui/material';
 import { WeaviateReturn } from 'weaviate-client';
-import { Testimonies } from '@/types/weaviate';
+import { Chunks, Testimonies } from '@/types/weaviate';
 import { ListView } from './ListView';
 import { GridView } from './GridView';
-import { SearchTable } from './SearchTable';
 import { SearchBox } from './SearchBox';
 import { RecordingsFilterSidebar } from './RecordingsFilterSidebar';
 import { GroupedExcerptResults } from './GroupedExcerptResults';
 import { ActiveFiltersDisplay } from './ActiveFiltersDisplay';
 import { Pagination } from './Pagination';
+import { PaginationSearch } from './PaginationSearch';
 import { NoInterviewsMessage } from './NoInterviewsMessage';
 import { colors } from '@/lib/theme';
 import useLayoutState from '@/app/stores/useLayout';
@@ -29,6 +29,7 @@ export default function CollectionLayout() {
     selectedNerEntities,
     nerExcerpts,
     nerExcerptsLoading,
+    searchTerm,
   } = useSemanticSearchStore();
   const { setTopBarCollapsedAuto } = useLayoutState();
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
@@ -134,9 +135,28 @@ export default function CollectionLayout() {
             </Box>
           )}
 
-          {/* Semantic Search Results */}
+          {/* Semantic Search Results — same grouped presentation as entity
+              results, so a reader scans recordings either way. */}
           {!semanticSearchLoading && selectedNerEntities.length === 0 && hasSearched && results.length > 0 && (
-            <SearchTable />
+            <>
+              <Box
+                sx={{
+                  flex: { xs: 'unset', md: 1 },
+                  minHeight: { xs: 'calc(100vh - 475px)', md: 0 },
+                  overflow: 'auto',
+                  pr: { xs: 0, md: 1 },
+                  pb: { xs: 1, md: 2 },
+                }}>
+                <GroupedExcerptResults
+                  excerpts={results.map((item) => item.properties as Partial<Chunks>)}
+                  highlightTerms={searchTerm ? [searchTerm] : []}
+                  emptyMessage={`No excerpts match "${searchTerm}".`}
+                />
+              </Box>
+              <Box sx={{ mt: { xs: 1, md: 'auto' } }}>
+                <PaginationSearch />
+              </Box>
+            </>
           )}
 
           {/* Show List/Grid View By Default (No Search) */}
