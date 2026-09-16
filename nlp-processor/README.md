@@ -1,7 +1,12 @@
 # nlp-processor
 
-FastAPI service that chunks transcript words and optionally runs NER (GLiNER via spaCy),
+FastAPI service that chunks transcript words and optionally runs NER (Claude),
 then optionally writes Testimonies + Chunks to Weaviate.
+
+NER sends a wide window of transcript to Claude, which returns the distinct named
+entities plus the surface forms the transcript uses for each. The service then
+locates those forms in the word stream, so entity timings come from word
+timestamps rather than from the model guessing offsets.
 
 ## Requirements
 

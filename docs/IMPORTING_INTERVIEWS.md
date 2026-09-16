@@ -182,7 +182,7 @@ For each interview JSON file:
 
 **Named Entity Recognition:**
 
-- Extracts entities using GLiNER
+- Extracts entities using Claude
 - Identifies: person, organization, location, date, event, technology
 - Maps entities to timestamps in transcript
 - Stores with confidence scores
@@ -310,7 +310,7 @@ docker compose run --rm weaviate-init
 **Optimization tips:**
 
 - Increase `SENTENCE_CHUNK_SIZE` to create fewer, larger chunks
-- Lower `GLINER_THRESHOLD` to reduce NER processing
+- Lower `NER_EFFORT` or `NER_WINDOW_CONCURRENCY` to reduce NER cost and rate-limit pressure
 - Process interviews in batches rather than all at once
 
 ## Troubleshooting Import Issues

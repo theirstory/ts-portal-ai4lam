@@ -80,7 +80,7 @@ Note: Docker-published ports can bypass UFW on some hosts. For strict public loc
 
 ## 6) Optional: move your already-indexed local Weaviate data to prod
 
-Use this if you want to avoid re-running GLiNER/embedding import in production.
+Use this if you want to avoid re-running NER/embedding import in production.
 
 ### 6.1 Export on local machine
 
