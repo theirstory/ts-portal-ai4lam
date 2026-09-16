@@ -66,7 +66,7 @@ type SemanticSearchStore = {
   nerEntityOptionsVisibleCountByLabel: Record<string, number>;
   setNerSearchTerm: (term: string) => void;
   setSelectedNerEntity: (entity: NerEntityFilter | null) => void;
-  loadNerEntityOptions: (label: string, append?: boolean) => Promise<void>;
+  loadNerEntityOptions: (label: string, append?: boolean, minValue?: number, maxValue?: number) => Promise<void>;
   collections: CollectionFilterOption[];
   folders: FolderFilterOption[];
   selectedCollectionIds: string[];
@@ -697,13 +697,16 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
        * the "Show more" control: it first reveals entities already fetched but
        * not yet displayed, and only goes back to the server once those run out.
        */
-      loadNerEntityOptions: async (label: string, append = false) => {
+      loadNerEntityOptions: async (label: string, append = false, minValue?: number, maxValue?: number) => {
         const {
           nerEntityOptionsLoadingByLabel,
           nerEntityOptionsOffsetByLabel,
           nerEntityOptionsByLabel,
           nerEntityOptionsVisibleCountByLabel,
           selectedCollectionIds,
+          selectedFolderIds,
+          searchTerm,
+          searchType,
         } = get();
         if (nerEntityOptionsLoadingByLabel[label]) return;
 
@@ -738,8 +741,13 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
         try {
           const response = await getNerEntityOptionsForLabel({
             label,
+            searchTerm,
+            searchType,
             collectionFilters: selectedCollectionIds,
+            folderFilters: selectedFolderIds,
             offset,
+            minValue,
+            maxValue,
           });
           // A slower earlier request must not overwrite a newer one's results.
           if (!isLatestNerEntityOptionRequest(label, requestId)) return;

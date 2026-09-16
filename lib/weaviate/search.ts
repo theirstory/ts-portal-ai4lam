@@ -3,6 +3,7 @@ import { Chunks, Testimonies, SchemaMap, SchemaTypes } from '@/types/weaviate';
 import { initWeaviateClient } from './client';
 import { FilterValue, QueryProperty } from 'weaviate-client';
 import { NerEntityOption, normalizeTimedNerData } from '@/types/ner';
+import { SearchType } from '@/types/searchType';
 import { readdir, readFile } from 'node:fs/promises';
 import path from 'node:path';
 
@@ -693,6 +694,7 @@ const NER_DATA_RETURN_PROPS = [
   { name: 'ner_data', properties: ['text', 'label', 'start_time', 'end_time'] },
 ] as unknown as QueryProperty<Testimonies>[];
 const NER_ENTITY_CHUNK_TEXT_PROPS: QueryProperty<Chunks>[] = ['ner_text', 'theirstory_id'];
+const NER_ENTITY_CHUNK_RETURN_PROPS: QueryProperty<Chunks>[] = ['theirstory_id', 'start_time', 'end_time'];
 
 /** Testimonies scanned per batch while discovering the entities for a label. */
 const NER_ENTITY_SOURCE_BATCH_SIZE = 500;
@@ -816,6 +818,28 @@ async function countChunkMatchesForEntityOptions(
     .sort((a, b) => b.count - a.count || a.text.localeCompare(b.text));
 }
 
+async function fetchTestimonyNerDataByIds(ids: string[]) {
+  if (ids.length === 0) return [];
+
+  const client = await initWeaviateClient();
+  const myCollection = client.collections.get<Testimonies>('Testimonies');
+
+  try {
+    const response = await myCollection.query.fetchObjects({
+      limit: ids.length,
+      filters: myCollection.filter.byId().containsAny(ids),
+      returnProperties: NER_DATA_RETURN_PROPS,
+    });
+    return response.objects.map((obj) => ({
+      id: obj.uuid,
+      nerData: normalizeTimedNerData(obj.properties?.ner_data),
+    }));
+  } catch (error) {
+    console.error('Error fetching testimony NER data for ids:', ids, error);
+    return [];
+  }
+}
+
 /**
  * Distinct entities recorded under one NER label, with the number of excerpts
  * and recordings each appears in — the list shown beneath a checked label in
@@ -823,18 +847,46 @@ async function countChunkMatchesForEntityOptions(
  */
 export async function getNerEntityOptionsForLabel({
   label,
+  searchTerm,
+  searchType,
   collectionFilters,
   folderFilters,
   offset = 0,
   sourceLimit = NER_ENTITY_SOURCE_BATCH_SIZE,
+  minValue,
+  maxValue,
 }: {
   label: string;
+  searchTerm?: string;
+  searchType?: SearchType;
   collectionFilters?: string[];
   folderFilters?: string[];
   offset?: number;
   sourceLimit?: number;
+  minValue?: number;
+  maxValue?: number;
 }): Promise<{ options: NerEntityOption[]; hasMore: boolean; scannedCount: number }> {
   const entityMap = new Map<string, NerEntityAccumulator>();
+  const normalizedSearchTerm = searchTerm?.trim();
+
+  // With an active search the sidebar must describe the visible results, not
+  // the whole archive, so entities are derived from the chunks that matched
+  // rather than from a full scan.
+  if (normalizedSearchTerm) {
+    return getNerEntityOptionsForSearch({
+      label,
+      searchTerm: normalizedSearchTerm,
+      searchType,
+      collectionFilters,
+      folderFilters,
+      offset,
+      sourceLimit,
+      minValue,
+      maxValue,
+      entityMap,
+    });
+  }
+
   const client = await initWeaviateClient();
   const myCollection = client.collections.get<Testimonies>('Testimonies');
   const combinedFilter = buildCombinedFilters(myCollection, [label], collectionFilters, folderFilters);
@@ -881,4 +933,101 @@ export async function getNerEntityOptionsForLabel({
   );
 
   return { options, hasMore: hitSafetyCap, scannedCount };
+}
+
+/**
+ * Entity options for a label restricted to what an active search matched.
+ *
+ * The chunks that matched give time windows; an entity counts if one of its
+ * mentions overlaps a matched window. That keeps the sidebar describing the
+ * results on screen — a count drawn from the whole archive would tell the user
+ * a filter will narrow their results when it would actually widen them.
+ */
+async function getNerEntityOptionsForSearch({
+  label,
+  searchTerm,
+  searchType,
+  collectionFilters,
+  folderFilters,
+  offset,
+  sourceLimit,
+  minValue,
+  maxValue,
+  entityMap,
+}: {
+  label: string;
+  searchTerm: string;
+  searchType?: SearchType;
+  collectionFilters?: string[];
+  folderFilters?: string[];
+  offset: number;
+  sourceLimit: number;
+  minValue?: number;
+  maxValue?: number;
+  entityMap: Map<string, NerEntityAccumulator>;
+}): Promise<{ options: NerEntityOption[]; hasMore: boolean; scannedCount: number }> {
+  const chunkFilters = [label];
+  const effectiveSearchType = searchType ?? SearchType.bm25;
+  const args = [
+    SchemaTypes.Chunks,
+    searchTerm,
+    sourceLimit,
+    offset,
+    chunkFilters,
+    collectionFilters,
+    folderFilters,
+    NER_ENTITY_CHUNK_RETURN_PROPS,
+    minValue,
+    maxValue,
+  ] as const;
+
+  let chunksResponse;
+  switch (effectiveSearchType) {
+    case SearchType.Hybrid:
+      chunksResponse = await hybridSearch(...args);
+      break;
+    case SearchType.Vector:
+      chunksResponse = await vectorSearch(...args);
+      break;
+    case SearchType.bm25:
+    default:
+      chunksResponse = await bm25Search(...args);
+      break;
+  }
+
+  const windowsByRecording = new Map<string, { start: number; end: number }[]>();
+  chunksResponse.objects.forEach((chunk) => {
+    const props = chunk.properties as Partial<Chunks>;
+    const recordingId = props.theirstory_id ?? '';
+    if (!recordingId || typeof props.start_time !== 'number' || typeof props.end_time !== 'number') return;
+
+    const existing = windowsByRecording.get(recordingId) ?? [];
+    existing.push({ start: props.start_time, end: props.end_time });
+    windowsByRecording.set(recordingId, existing);
+  });
+
+  const testimonyNerData = await fetchTestimonyNerDataByIds([...windowsByRecording.keys()]);
+  testimonyNerData.forEach(({ id, nerData }) => {
+    const entitiesForLabel = nerData.filter((ner) => ner.label === label);
+
+    (windowsByRecording.get(id) ?? []).forEach((window) => {
+      // One mention per matched chunk, so an entity said twice in the same
+      // excerpt still counts as one result the user can click through to.
+      const matchedTexts = new Set<string>();
+      entitiesForLabel
+        .filter((ner) => ner.end_time >= window.start && ner.start_time <= window.end)
+        .forEach((ner) => {
+          const text = ner.text.trim();
+          if (text) matchedTexts.add(text);
+        });
+
+      matchedTexts.forEach((text) => addNerEntityOption(entityMap, text, label, id));
+    });
+  });
+
+  return {
+    options: sortNerEntityOptions(entityMap),
+    hasMore: chunksResponse.objects.length === sourceLimit,
+    scannedCount: chunksResponse.objects.length,
+  };
 }
