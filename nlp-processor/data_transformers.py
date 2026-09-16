@@ -64,9 +64,12 @@ def _create_single_section(transcript_data: Dict[str, Any]) -> List[Dict[str, An
         if raw_para_words:
             source_words = raw_para_words
         else:
+            # Half-open range: adjacent paragraphs share a boundary timestamp
+            # (one ends at T, the next starts at T), so a closed range assigns a
+            # word starting exactly at T to both and duplicates it.
             source_words = [
                 word for word in words
-                if para_start <= float(word.get("start", 0) or 0) <= para_end
+                if para_start <= float(word.get("start", 0) or 0) < para_end
             ]
         
         para_words = []
@@ -285,8 +288,11 @@ def _extract_section_words(
     for word in all_words:
         word_start = word.get("start", 0)
         
-        # Check if word is within paragraph bounds
-        if not (para_start <= word_start <= para_end):
+        # Check if word is within paragraph bounds. Half-open: adjacent
+        # paragraphs share a boundary timestamp (one ends at T, the next starts
+        # at T), so a closed range assigns a word starting exactly at T to both
+        # and duplicates it across the speaker change.
+        if not (para_start <= word_start < para_end):
             continue
         
         # Check if word is within section bounds
