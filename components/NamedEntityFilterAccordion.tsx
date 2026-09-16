@@ -294,7 +294,6 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
                             pr: 0.75,
                             borderRadius: 1,
                             cursor: 'pointer',
-                            bgcolor: isActive ? 'action.selected' : 'transparent',
                             '&:hover': { bgcolor: 'action.hover' },
                           }}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.25, minWidth: 0 }}>

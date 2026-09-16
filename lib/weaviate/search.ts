@@ -1185,3 +1185,38 @@ export async function getRecordingIdsForNerEntities(
 
   return [...recordingIds];
 }
+
+/**
+ * Total recordings matching the current filters.
+ *
+ * Pagination previously inferred the page count from whether the current page
+ * came back full, which can only ever produce "this page, maybe one more" — so
+ * an archive of any size showed at most two pages.
+ */
+export async function getStoriesCountFromCollection<T extends SchemaTypes>(
+  collection: T,
+  collectionFilters?: string[],
+  folderFilters?: string[],
+  nerFilters?: string[],
+  recordingIds?: string[],
+): Promise<number> {
+  const client = await initWeaviateClient();
+  const myCollection = client.collections.get<SchemaMap[T]>(collection);
+  const propertyFilter = buildCombinedFilters(myCollection, nerFilters, collectionFilters, folderFilters);
+
+  let combinedFilter = propertyFilter;
+  if (recordingIds) {
+    const idFilter = myCollection.filter.byId().containsAny(recordingIds.length ? recordingIds : ['__none__']);
+    combinedFilter = propertyFilter
+      ? ({ operator: 'And', filters: [propertyFilter, idFilter], value: true } as FilterValue)
+      : idFilter;
+  }
+
+  try {
+    const response = await myCollection.aggregate.overAll({ filters: combinedFilter });
+    return response.totalCount ?? 0;
+  } catch (error) {
+    console.error('Error counting stories:', error);
+    return 0;
+  }
+}

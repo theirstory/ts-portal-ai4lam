@@ -7,9 +7,16 @@ import { SchemaTypes } from '@/types/weaviate';
 import { PAGINATION_ITEMS_PER_PAGE } from '@/app/constants';
 
 export const Pagination = () => {
-  const { currentPage, hasNextStoriesPage, setCurrentPage, getAllStories } = useSemanticSearchStore();
+  const { currentPage, hasNextStoriesPage, setCurrentPage, getAllStories, storiesTotalCount } =
+    useSemanticSearchStore();
 
-  const totalPages = hasNextStoriesPage ? currentPage + 1 : currentPage;
+  // Prefer the real total; fall back to the old "maybe one more" guess only if
+  // the count has not arrived, so the control never shows fewer pages than exist.
+  const totalPages = storiesTotalCount
+    ? Math.ceil(storiesTotalCount / PAGINATION_ITEMS_PER_PAGE)
+    : hasNextStoriesPage
+      ? currentPage + 1
+      : currentPage;
 
   const handlePageChange = (_: React.ChangeEvent<unknown>, page: number) => {
     if (page === currentPage) return;

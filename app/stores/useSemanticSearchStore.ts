@@ -11,6 +11,7 @@ import {
   getAvailableNerLabelStats,
   getNerEntityOptionsForLabel,
   getRecordingIdsForNerEntities,
+  getStoriesCountFromCollection,
   getStoryByUuid,
   hybridSearch,
   hybridSearchForStoryId,
@@ -62,6 +63,8 @@ type SemanticSearchStore = {
   availableNerLabelCounts: Record<string, number>;
   /** Distinct entities under each label — what the sidebar shows beside a label. */
   availableNerEntityCounts: Record<string, number>;
+  /** Recordings matching the current filters, for real page counts. */
+  storiesTotalCount: number;
   /** Labels whose entity list is expanded in the sidebar. */
   expandedNerLabels: string[];
   toggleExpandedNerLabel: (label: string) => string[];
@@ -218,6 +221,7 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
       availableNerLabels: [],
       availableNerLabelCounts: {},
       availableNerEntityCounts: {},
+      storiesTotalCount: 0,
       expandedNerLabels: [],
       availableNerLabelsLoaded: false,
       nerSearchTerm: '',
@@ -340,16 +344,26 @@ export const useSemanticSearchStore = create<SemanticSearchStore>()(
             ? await getRecordingIdsForNerEntities(nerEntities, selectedCollectionIds, selectedFolderIds)
             : undefined;
 
-          const stories = await getAllStoriesFromCollection(
-            collection,
-            returnProperties,
-            limit,
-            offset,
-            selectedCollectionIds,
-            selectedFolderIds,
-            nerFilters,
-            recordingIds,
-          );
+          const [stories, storiesTotalCount] = await Promise.all([
+            getAllStoriesFromCollection(
+              collection,
+              returnProperties,
+              limit,
+              offset,
+              selectedCollectionIds,
+              selectedFolderIds,
+              nerFilters,
+              recordingIds,
+            ),
+            getStoriesCountFromCollection(
+              collection,
+              selectedCollectionIds,
+              selectedFolderIds,
+              nerFilters,
+              recordingIds,
+            ),
+          ]);
+          set({ storiesTotalCount }, false, 'getAllStories:count');
           let hasNextStoriesPage = false;
           if ((stories?.objects?.length ?? 0) === limit) {
             const nextPageProbe = await getAllStoriesFromCollection(
