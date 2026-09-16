@@ -111,6 +111,13 @@ export const useRecordingsUrlState = () => {
     if (filter) setResultsFilterTerm(filter);
     if (typeParam && isSearchType(typeParam)) setSearchType(typeParam);
 
+    // Always load the recordings list, whatever else is being restored. It is
+    // the baseline the view falls back to when filters are cleared, the filter
+    // sidebar hides itself when there are no recordings, and the store's
+    // `loading` starts true and is only cleared by this call or a search —
+    // skipping it left a restored link spinning forever.
+    getAllStories(SchemaTypes.Testimonies, [...STORIES_RETURN_PROPERTIES], PAGINATION_ITEMS_PER_PAGE, 0);
+
     if (entities.length) {
       setSelectedNerEntities(entities);
       // Open the labels the entities belong to, so the sidebar shows why the
@@ -123,12 +130,6 @@ export const useRecordingsUrlState = () => {
       setSearchTerm(query);
       setHasSearched(true);
       runSearchFor(type, entities);
-      return;
-    }
-
-    if (!entities.length) {
-      // Nothing to restore beyond collections; the normal listing applies.
-      getAllStories(SchemaTypes.Testimonies, [...STORIES_RETURN_PROPERTIES], PAGINATION_ITEMS_PER_PAGE, 0);
     }
   }, [
     getAllStories,
