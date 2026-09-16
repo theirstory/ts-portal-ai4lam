@@ -11,6 +11,7 @@ import { ListView } from './ListView';
 import { GridView } from './GridView';
 import { SearchTable } from './SearchTable';
 import { SearchBox } from './SearchBox';
+import { RecordingsFilterSidebar } from './RecordingsFilterSidebar';
 import { ActiveFiltersDisplay } from './ActiveFiltersDisplay';
 import { Pagination } from './Pagination';
 import { NoInterviewsMessage } from './NoInterviewsMessage';
@@ -70,7 +71,11 @@ export default function CollectionLayout() {
           paddingTop: { xs: 1, md: 2 },
           paddingBottom: { xs: 2, md: 3 },
           width: '100%',
+          gap: { xs: 0, md: 3 },
         }}>
+        {/* Filter sidebar — hidden below md, where SearchBox's dropdowns serve instead */}
+        <RecordingsFilterSidebar />
+
         {/* Main Content */}
         <Box
           sx={{
