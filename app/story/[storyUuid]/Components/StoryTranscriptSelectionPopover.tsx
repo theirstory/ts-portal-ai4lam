@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from 'react';
 import { Button, Paper } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import EditNoteIcon from '@mui/icons-material/EditNote';
@@ -41,6 +41,12 @@ function getSelectionTimeRange(container: HTMLElement): { startTime: number; end
   return found ? { startTime: minStart, endTime: maxEnd } : null;
 }
 
+/** Where the selection sits, in the scroll container's own coordinates. */
+type SelectionAnchor = { top: number; bottom: number; left: number };
+
+/** Clear of the text it points at, and of the container's edges. */
+const POPOVER_GAP = 8;
+
 type SelectedSection = { start?: number; title?: string };
 
 /**
@@ -75,7 +81,10 @@ const formatTimestamp = (seconds?: number) => {
 };
 
 export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoteroSave }: Props) => {
-  const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
+  const [anchor, setAnchor] = useState<SelectionAnchor | null>(null);
+  // Resolved once the popover has been measured, since where it fits depends
+  // on how wide it is — and its width changes with which actions are offered.
+  const [placement, setPlacement] = useState<{ top: number; left: number } | null>(null);
   const [selectedText, setSelectedText] = useState('');
   const [timeRange, setTimeRange] = useState<{ startTime: number; endTime: number } | null>(null);
   const [section, setSection] = useState<SelectedSection | null>(null);
@@ -86,7 +95,8 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
   const storyHubPage = useSemanticSearchStore((state) => state.storyHubPage);
 
   const dismiss = () => {
-    setPosition(null);
+    setAnchor(null);
+    setPlacement(null);
     setSelectedText('');
     setTimeRange(null);
     setSection(null);
@@ -111,10 +121,12 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
       const rect = range.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
 
-      setPosition({
-        top: rect.top - containerRect.top + container.scrollTop - 44,
+      setAnchor({
+        top: rect.top - containerRect.top + container.scrollTop,
+        bottom: rect.bottom - containerRect.top + container.scrollTop,
         left: rect.left - containerRect.left + container.scrollLeft + rect.width / 2,
       });
+      setPlacement(null);
       setSelectedText(text);
       setTimeRange(getSelectionTimeRange(container));
       setSection(getSelectedSection(container));
@@ -138,6 +150,35 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
       document.removeEventListener('mousedown', handleMouseDown);
     };
   }, [containerRef, handleMouseUp, handleMouseDown]);
+
+  /**
+   * Keeps the popover inside the panel.
+   *
+   * It used to sit a fixed 44px above the selection, which put it off the top
+   * of the scroll container — and behind the toolbar — for anything selected
+   * in the first chapter. It now flips below the selection when there is no
+   * room above, and is held clear of the left and right edges by its own
+   * measured width.
+   */
+  useLayoutEffect(() => {
+    const container = containerRef.current;
+    const node = popoverRef.current;
+    if (!container || !node || !anchor) return;
+
+    const { offsetWidth: width, offsetHeight: height } = node;
+    const visibleTop = container.scrollTop;
+    const above = anchor.top - height - POPOVER_GAP;
+    const top = above >= visibleTop + POPOVER_GAP ? above : anchor.bottom + POPOVER_GAP;
+
+    const half = width / 2;
+    const minLeft = container.scrollLeft + half + POPOVER_GAP;
+    const maxLeft = container.scrollLeft + container.clientWidth - half - POPOVER_GAP;
+    // max before min, so a popover wider than the panel still starts on screen
+    // rather than being pushed off the left edge by the clamp itself.
+    const left = Math.max(minLeft, Math.min(anchor.left, maxLeft));
+
+    setPlacement({ top, left });
+  }, [anchor, containerRef, selectedText, section, timeRange]);
 
   const handleAskAI = () => {
     if (!selectedText) return;
@@ -189,7 +230,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
   const showZoteroButton = showZotero && timeRange;
   const showSuggest = isSuggestionsEnabled;
 
-  if (!position || !selectedText) return null;
+  if (!anchor || !selectedText) return null;
   if (!showAskAI && !showZoteroButton && !showSuggest) return null;
 
   return (
@@ -198,8 +239,11 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
       elevation={4}
       sx={{
         position: 'absolute',
-        top: position.top,
-        left: position.left,
+        top: placement?.top ?? anchor.top,
+        left: placement?.left ?? anchor.left,
+        // Hidden for the frame it takes to measure, so it is never seen in the
+        // wrong place before being moved to the right one.
+        visibility: placement ? 'visible' : 'hidden',
         transform: 'translateX(-50%)',
         zIndex: 1300,
         borderRadius: 2,
