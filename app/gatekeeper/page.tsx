@@ -166,10 +166,6 @@ function GatekeeperContent() {
             </Button>
           </Box>
         </Paper>
-
-        <Typography variant="caption" color="rgba(255,255,255,0.5)" align="center" sx={{ mt: 4, display: 'block' }}>
-          &copy; {new Date().getFullYear()} {orgName}. All rights reserved.
-        </Typography>
       </Container>
     </Box>
   );
