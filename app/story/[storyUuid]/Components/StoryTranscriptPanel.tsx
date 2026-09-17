@@ -15,7 +15,6 @@ import { scrollElementIntoContainer } from '@/app/utils/scrollElementIntoContain
 import { StoryTranscriptSelectionPopover } from './StoryTranscriptSelectionPopover';
 import { useZoteroStore } from '@/app/stores/useZoteroStore';
 import { useChatStore } from '@/app/stores/useChatStore';
-import { isChatEnabled } from '@/config/organizationConfig';
 import { organizationConfig } from '@/config/organizationConfig';
 import { ZoteroSaveModal } from '@/components/zotero/ZoteroSaveModal';
 import { Snackbar, Alert } from '@mui/material';
@@ -313,12 +312,28 @@ export const StoryTranscriptPanel = ({ isMobile = false }: StoryTranscriptPanelP
           const isExpanded = !!expandedSections[section.start];
 
           return (
-            <Accordion key={section.start} expanded={isExpanded} onChange={() => toggleSection(section.start)}>
+            <Accordion
+              key={section.start}
+              expanded={isExpanded}
+              onChange={() => {
+                // A drag that left text selected was an attempt to quote this
+                // chapter, not to collapse it — closing the section on mouseup
+                // would take the selection away with it.
+                if (window.getSelection()?.toString().trim()) return;
+                toggleSection(section.start);
+              }}>
               <AccordionSummary
                 sx={{ backgroundColor: colors.primary.main, borderRadius: 1 }}
                 expandIcon={<ExpandMoreIcon />}
-                data-section-start={section.start}>
-                <Box display="flex" flexDirection="column" gap={1}>
+                data-section-start={section.start}
+                data-section-title={section.title}>
+                <Box
+                  display="flex"
+                  flexDirection="column"
+                  gap={1}
+                  // Selectable despite sitting inside a button: an index entry
+                  // is a claim a reader may want to quote and correct.
+                  sx={{ userSelect: 'text', cursor: 'auto' }}>
                   <Typography variant="subtitle1" fontWeight="bold" color={colors.common.white}>
                     {section.title}
                   </Typography>

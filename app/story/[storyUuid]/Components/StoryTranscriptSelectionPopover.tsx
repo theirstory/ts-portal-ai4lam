@@ -41,10 +41,44 @@ function getSelectionTimeRange(container: HTMLElement): { startTime: number; end
   return found ? { startTime: minStart, endTime: maxEnd } : null;
 }
 
+type SelectedSection = { start?: number; title?: string };
+
+/**
+ * The chapter heading a selection falls inside, if any.
+ *
+ * An index entry is a claim about the recording just as a transcript line is,
+ * and it is just as capable of being wrong — so selecting a chapter title or
+ * its synopsis has to raise a correction about that chapter rather than about
+ * the words of the transcript, which are not what the reader highlighted.
+ */
+function getSelectedSection(container: HTMLElement): SelectedSection | null {
+  const selection = window.getSelection();
+  if (!selection || !selection.rangeCount) return null;
+
+  const node = selection.getRangeAt(0).commonAncestorContainer;
+  const element = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+  const summary = element?.closest<HTMLElement>('[data-section-start]');
+  if (!summary || !container.contains(summary)) return null;
+
+  const start = parseFloat(summary.dataset.sectionStart || '');
+  return {
+    start: Number.isFinite(start) ? start : undefined,
+    title: summary.dataset.sectionTitle || undefined,
+  };
+}
+
+const formatTimestamp = (seconds?: number) => {
+  if (typeof seconds !== 'number' || !Number.isFinite(seconds)) return null;
+  const total = Math.max(0, Math.floor(seconds));
+  const pad = (value: number) => String(value).padStart(2, '0');
+  return `${Math.floor(total / 3600)}:${pad(Math.floor((total % 3600) / 60))}:${pad(total % 60)}`;
+};
+
 export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoteroSave }: Props) => {
   const [position, setPosition] = useState<{ top: number; left: number } | null>(null);
   const [selectedText, setSelectedText] = useState('');
   const [timeRange, setTimeRange] = useState<{ startTime: number; endTime: number } | null>(null);
+  const [section, setSection] = useState<SelectedSection | null>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const isAuthenticated = useZoteroStore((s) => s.isAuthenticated);
   const showZotero = isZoteroEnabled && isAuthenticated;
@@ -55,6 +89,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
     setPosition(null);
     setSelectedText('');
     setTimeRange(null);
+    setSection(null);
   };
 
   const handleMouseUp = useCallback(() => {
@@ -82,6 +117,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
       });
       setSelectedText(text);
       setTimeRange(getSelectionTimeRange(container));
+      setSection(getSelectedSection(container));
     }, 10);
   }, [containerRef]);
 
@@ -121,14 +157,30 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
   // other actions use.
   const handleSuggest = () => {
     if (!selectedText) return;
-    openSuggestion({
-      kind: 'transcript',
-      quotedText: selectedText,
+    const recording = {
       recordingId: storyHubPage?.uuid,
       recordingTitle: storyHubPage?.properties?.interview_title as string | undefined,
-      startTime: timeRange?.startTime,
-      endTime: timeRange?.endTime,
-    });
+    };
+
+    openSuggestion(
+      section
+        ? {
+            kind: 'index',
+            quotedText: selectedText,
+            ...recording,
+            startTime: section.start,
+            field: [section.title, formatTimestamp(section.start) && `at ${formatTimestamp(section.start)}`]
+              .filter(Boolean)
+              .join(' '),
+          }
+        : {
+            kind: 'transcript',
+            quotedText: selectedText,
+            ...recording,
+            startTime: timeRange?.startTime,
+            endTime: timeRange?.endTime,
+          },
+    );
     dismiss();
     window.getSelection()?.removeAllRanges();
   };
@@ -204,7 +256,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
             whiteSpace: 'nowrap',
             borderRadius: 0,
           }}>
-          Suggest a correction
+          {section ? 'Suggest a correction to this chapter' : 'Suggest a correction'}
         </Button>
       )}
     </Paper>
