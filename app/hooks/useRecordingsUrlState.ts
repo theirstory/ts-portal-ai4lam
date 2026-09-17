@@ -64,6 +64,8 @@ export const useRecordingsUrlState = () => {
     setSelectedNerEntities,
     setResultsFilterTerm,
     setExpandedNerLabels,
+    clearSearch,
+    clearNerEntities,
     loadNerExcerpts,
     getAllStories,
     run25bmSearch,
@@ -115,9 +117,22 @@ export const useRecordingsUrlState = () => {
       .filter((entity): entity is NerEntityFilter => entity !== null);
     const filter = searchParams.get(PARAM.filter) ?? '';
 
-    if (collections.length) setSelectedCollectionIds(collections);
-    if (filter) setResultsFilterTerm(filter);
+    // The URL is the source of truth on arrival, so anything it does not carry
+    // is cleared rather than left alone. Returning to this page from a
+    // recording used to inherit the previous search: hasSearched stayed true
+    // with no results behind it, which renders as "No stories available."
+    setSelectedCollectionIds(collections);
+    setResultsFilterTerm(filter);
     if (typeParam && isSearchType(typeParam)) setSearchType(typeParam);
+
+    if (!query) {
+      clearSearch();
+      setHasSearched(false);
+    }
+    if (!entities.length) {
+      clearNerEntities();
+      setExpandedNerLabels([]);
+    }
 
     // Always load the recordings list, whatever else is being restored. It is
     // the baseline the view falls back to when filters are cleared, the filter
@@ -152,6 +167,8 @@ export const useRecordingsUrlState = () => {
     setSearchType,
     setSelectedCollectionIds,
     setSelectedNerEntities,
+    clearSearch,
+    clearNerEntities,
   ]);
 
   // --- write ------------------------------------------------------------
