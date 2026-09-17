@@ -1,21 +1,18 @@
 'use client';
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef } from 'react';
 import AppBar from '@mui/material/AppBar';
 import Toolbar from '@mui/material/Toolbar';
 import Link from 'next/link';
-import { Box, Typography, IconButton, Tooltip } from '@mui/material';
-import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
-import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
-import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import { Box, Typography } from '@mui/material';
 import { LogoArchive } from '@/app/assets/svg/LogoArchive';
 import { CarouselTopBar } from '../CarouselTopBar/CarouselTopBar';
 import useLayoutState from '@/app/stores/useLayout';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { config, organizationConfig, isChatEnabled, isZoteroEnabled, externalNavLinks } from '@/config/organizationConfig';
-import { ZoteroAuthButton } from '@/components/zotero/ZoteroAuthButton';
+import { config, organizationConfig } from '@/config/organizationConfig';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 import { colors } from '@/lib/theme';
+import { TopBarNav } from './TopBarNav';
+import { useNavOverflow } from './useNavOverflow';
 
 export interface NavLink {
   name: string;
@@ -32,12 +29,9 @@ export const AppTopBar = () => {
   const searchParams = useSearchParams();
   const isEmbed = searchParams.get('embed') === 'true';
 
-  if (isEmbed) return null;
   const isStoryPage = pathname.startsWith('/story/');
   const isChatPage = pathname.startsWith('/discover');
   const isIndexPage = pathname.startsWith('/indexes');
-  const isCollectionsPage = pathname.startsWith('/collections');
-  const isHomePage = pathname === '/';
   const isFullScreenPage = isStoryPage || isChatPage;
   const isAutoCollapsePage = isStoryPage || isChatPage || isIndexPage;
   const isHeaderOverlayEnabled = config?.ui?.portalHeaderOverlay?.enabled ?? true;
@@ -68,6 +62,17 @@ export const AppTopBar = () => {
   }, [collections.length, loadCollections]);
 
   const shouldShowCollectionsLink = collections.length > 1;
+  const topRowRef = useRef<HTMLDivElement | null>(null);
+  // Remeasure from scratch whenever the row's contents change, since the
+  // width it needs changes with them.
+  const isNavCompact = useNavOverflow(
+    topRowRef,
+    `${shouldShowCollectionsLink}|${isFullScreenPage}|${shouldUseCustomLogo}`,
+  );
+
+  // After the hooks, not before them: an embed that toggled this early return
+  // would otherwise change how many hooks the component runs between renders.
+  if (isEmbed) return null;
 
   return (
     <AppBar
@@ -89,15 +94,18 @@ export const AppTopBar = () => {
           paddingRight: 0,
         }}>
         <CarouselTopBar isCollapsed={isTopBarCollapsed}>
-          <Box display="flex" justifyContent="space-between">
+          {/* The row the nav measures itself against: its children never shrink,
+              so when they stop fitting it overflows — which is the signal the
+              hook watches for — instead of silently wrapping to a second line. */}
+          <Box ref={topRowRef} display="flex" justifyContent="space-between" alignItems="center" gap={1.5}>
             <Link
               href="/"
-              style={{ textDecoration: 'none', cursor: 'pointer' }}
+              style={{ textDecoration: 'none', cursor: 'pointer', flexShrink: 0 }}
               onClick={(e) => {
                 e.preventDefault();
                 window.location.href = '/';
               }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', height: 40 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', height: 40, flexShrink: 0 }}>
                 {shouldUseCustomLogo ? (
                   <Box
                     component="img"
@@ -113,166 +121,13 @@ export const AppTopBar = () => {
                 )}
               </Box>
             </Link>
-            <Box
-              sx={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: 3,
-                // The chip carries the whole row on desktop — nav, attribution
-                // and the collapse control — so they read as one control
-                // surface over the artwork instead of the last two floating
-                // loose beside it. Mobile keeps its own compact row untouched.
-                px: { xs: 0, md: 1.5 },
-                py: { xs: 0, md: 0.75 },
-                borderRadius: { xs: 0, md: '8px' },
-                backgroundColor: { xs: 'transparent', md: 'rgba(0, 0, 0, 0.22)' },
-                backdropFilter: { xs: 'none', md: 'blur(8px)' },
-                boxShadow: { xs: 'none', md: '0 6px 20px rgba(0,0,0,0.18)' },
-              }}>
-              <Box
-                sx={{
-                  display: { xs: 'flex', md: 'none' },
-                  alignItems: 'center',
-                  gap: 1,
-                  '& a': {
-                    color: config.theme.colors.primary.contrastText,
-                    textDecoration: 'none',
-                    fontSize: '11px',
-                    fontWeight: 700,
-                    letterSpacing: '0.06em',
-                    minHeight: 0,
-                    opacity: 0.85,
-                    transition: 'opacity 0.15s',
-                    '&:hover': { opacity: 1 },
-                  },
-                }}>
-                {!isHomePage && <Link href="/">RECORDINGS</Link>}
-                {!isIndexPage && <Link href="/indexes">INDEXES</Link>}
-                {shouldShowCollectionsLink && !isCollectionsPage && <Link href="/collections">COLLECTIONS</Link>}
-                {externalNavLinks.map((link) => (
-                  <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">
-                    {link.label}
-                  </a>
-                ))}
-                {!isFullScreenPage && (
-                  <Tooltip title={isTopBarCollapsed ? 'Expand' : 'Collapse'}>
-                    <IconButton
-                      onClick={handleTopBarCollapseToggle}
-                      size="small"
-                      aria-label={isTopBarCollapsed ? 'Expand banner' : 'Collapse banner'}
-                      sx={{
-                        color: config.theme.colors.primary.contrastText,
-                        bgcolor: 'transparent',
-                        border: `1.5px solid ${config.theme.colors.primary.contrastText}`,
-                        width: 30,
-                        height: 30,
-                        '&:hover': {
-                          color: config.theme.colors.primary.main,
-                          borderColor: config.theme.colors.primary.main,
-                          bgcolor: 'action.hover',
-                        },
-                      }}>
-                      {isTopBarCollapsed ? <KeyboardArrowDownIcon /> : <KeyboardArrowUpIcon />}
-                    </IconButton>
-                  </Tooltip>
-                )}
-              </Box>
-              <Box
-                sx={{
-                  display: { xs: 'none', md: 'flex' },
-                  alignItems: 'center',
-                  gap: 3,
-                  '& a': {
-                    color: config.theme.colors.primary.contrastText,
-                    textDecoration: 'none',
-                    fontSize: '13px',
-                    fontWeight: 800,
-                    letterSpacing: '0.06em',
-                    opacity: 1,
-                    textShadow: '0 1px 8px rgba(0,0,0,0.45)',
-                    transition: 'opacity 0.15s',
-                    '&:hover': { opacity: 1 },
-                  },
-                }}>
-                <Link href="/">RECORDINGS</Link>
-                <Link href="/indexes">INDEXES</Link>
-                {shouldShowCollectionsLink && <Link href="/collections">COLLECTIONS</Link>}
-                {/* Leaves the portal, so it is marked as such and opens in a new
-                    tab rather than replacing the archive the reader is in. */}
-                {externalNavLinks.map((link) => (
-                  <Box
-                    key={link.href}
-                    component="a"
-                    href={link.href}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                    {link.label}
-                    <OpenInNewIcon sx={{ fontSize: 13 }} aria-hidden />
-                  </Box>
-                ))}
-                {isChatEnabled && (
-                  <Box
-                    component={Link}
-                    href="/discover"
-                    sx={{
-                      display: 'inline-flex',
-                      alignItems: 'center',
-                      gap: '5px',
-                      border: `1.5px solid ${config.theme.colors.primary.contrastText}`,
-                      borderRadius: '6px',
-                      padding: '4px 12px',
-                      opacity: '0.85 !important',
-                      '&:hover': { opacity: '1 !important', bgcolor: 'rgba(255,255,255,0.1)' },
-                    }}>
-                    <AutoAwesomeIcon sx={{ fontSize: 16 }} />
-                    DISCOVER
-                  </Box>
-                )}
-                {isZoteroEnabled && <ZoteroAuthButton />}
-              </Box>
-              <Typography
-                variant="caption"
-                color={config.theme.colors.primary.contrastText}
-                sx={{
-                  fontWeight: 500,
-                  display: { xs: 'none', md: 'block' },
-                  textShadow: '0 1px 8px rgba(0,0,0,0.45)',
-                }}>
-                Powered by{' '}
-                <a
-                  href="https://theirstory.io/welcome"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  style={{ color: 'inherit', textDecoration: 'underline' }}>
-                  TheirStory
-                </a>
-              </Typography>
-              {!isFullScreenPage && (
-                <Box sx={{ display: { xs: 'none', md: 'flex' }, alignItems: 'center' }}>
-                  <Tooltip title={isTopBarCollapsed ? 'Expand' : 'Collapse'}>
-                    <IconButton
-                      onClick={handleTopBarCollapseToggle}
-                      size="small"
-                      aria-label={isTopBarCollapsed ? 'Expand' : 'Collapse'}
-                      sx={{
-                        color: config.theme.colors.primary.contrastText,
-                        bgcolor: 'transparent',
-                        border: `1.5px solid ${config.theme.colors.primary.contrastText}`,
-                        width: 30,
-                        height: 30,
-                        '&:hover': {
-                          color: config.theme.colors.primary.main,
-                          borderColor: config.theme.colors.primary.main,
-                          bgcolor: 'action.hover',
-                        },
-                      }}>
-                      {isTopBarCollapsed ? <KeyboardArrowDownIcon /> : <KeyboardArrowUpIcon />}
-                    </IconButton>
-                  </Tooltip>
-                </Box>
-              )}
-            </Box>
+            <TopBarNav
+              isCompact={isNavCompact}
+              shouldShowCollectionsLink={shouldShowCollectionsLink}
+              isTopBarCollapsed={isTopBarCollapsed}
+              isFullScreenPage={isFullScreenPage}
+              onToggleCollapse={handleTopBarCollapseToggle}
+            />
           </Box>
           <Box
             id="top-bar-info"
