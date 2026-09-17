@@ -9,6 +9,8 @@ import { formatStoryDate } from '@/app/utils/util';
 import { isZoteroEnabled } from '@/config/organizationConfig';
 import { ZoteroSaveInterviewButton } from '@/components/zotero/ZoteroSaveInterviewButton';
 import { SuggestCorrectionButton } from '@/components/suggestions/SuggestCorrectionButton';
+import { ShareButton } from '@/components/share/ShareButton';
+import { buildStoryShareUrl } from '@/lib/share';
 
 interface StoryMetadataProps {
   isMobile?: boolean;
@@ -25,6 +27,10 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
     recordingId: storyHubPage?.uuid,
     recordingTitle: interview_title as string | undefined,
   };
+  // The whole recording, with no timestamps — the moment-level links come from
+  // selecting the passage in the transcript.
+  const shareUrl = storyHubPage?.uuid ? buildStoryShareUrl({ storyId: storyHubPage.uuid }) : '';
+  const shareTitle = (interview_title as string) || 'Recording';
   const formattedRecordingDate = formatStoryDate(recording_date);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -53,10 +59,13 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
               <Typography variant="subtitle1" fontWeight="bold" color="primary" sx={{ lineHeight: 1.3 }}>
                 {interview_title}
               </Typography>
-              <SuggestCorrectionButton
-                context={{ ...suggestionContext, field: 'Recording metadata' }}
-                label="Suggest a correction to this recording's details"
-              />
+              <Box display="flex" alignItems="center" flexShrink={0}>
+                {shareUrl && <ShareButton url={shareUrl} title={shareTitle} label="Share this recording" />}
+                <SuggestCorrectionButton
+                  context={{ ...suggestionContext, field: 'Recording metadata' }}
+                  label="Suggest a correction to this recording's details"
+                />
+              </Box>
             </Box>
           )}
 
@@ -148,12 +157,15 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
                 <Typography variant="h6" fontWeight="bold" color="primary">
                   {interview_title}
                 </Typography>
-                {/* Covers the whole panel: a reader who spots a wrong date,
-                    participant or summary raises it from here and says which. */}
-                <SuggestCorrectionButton
-                  context={{ ...suggestionContext, field: 'Recording metadata' }}
-                  label="Suggest a correction to this recording's details"
-                />
+                <Box display="flex" alignItems="center" flexShrink={0}>
+                  {shareUrl && <ShareButton url={shareUrl} title={shareTitle} label="Share this recording" />}
+                  {/* Covers the whole panel: a reader who spots a wrong date,
+                      participant or summary raises it from here and says which. */}
+                  <SuggestCorrectionButton
+                    context={{ ...suggestionContext, field: 'Recording metadata' }}
+                    label="Suggest a correction to this recording's details"
+                  />
+                </Box>
               </Box>
             )}
 

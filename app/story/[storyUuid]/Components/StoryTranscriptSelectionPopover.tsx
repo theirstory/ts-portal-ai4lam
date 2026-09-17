@@ -4,11 +4,14 @@ import React, { useState, useEffect, useLayoutEffect, useCallback, useRef } from
 import { Button, Paper } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
 import EditNoteIcon from '@mui/icons-material/EditNote';
+import ShareIcon from '@mui/icons-material/Share';
 import { isZoteroEnabled, isChatEnabled, isSuggestionsEnabled } from '@/config/organizationConfig';
 import { useZoteroStore } from '@/app/stores/useZoteroStore';
 import { ZoteroIcon } from '@/components/zotero/ZoteroIcon';
 import { useSuggestionStore } from '@/app/stores/useSuggestionStore';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
+import { ShareMenu } from '@/components/share/ShareMenu';
+import { buildStoryShareUrl, formatShareTimestamp } from '@/lib/share';
 
 type Props = {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -88,6 +91,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
   const [selectedText, setSelectedText] = useState('');
   const [timeRange, setTimeRange] = useState<{ startTime: number; endTime: number } | null>(null);
   const [section, setSection] = useState<SelectedSection | null>(null);
+  const [shareAnchor, setShareAnchor] = useState<null | HTMLElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
   const isAuthenticated = useZoteroStore((s) => s.isAuthenticated);
   const showZotero = isZoteroEnabled && isAuthenticated;
@@ -133,10 +137,16 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
     }, 10);
   }, [containerRef]);
 
-  const handleMouseDown = useCallback((e: MouseEvent) => {
-    if (popoverRef.current?.contains(e.target as Node)) return;
-    dismiss();
-  }, []);
+  const handleMouseDown = useCallback(
+    (e: MouseEvent) => {
+      if (popoverRef.current?.contains(e.target as Node)) return;
+      // The share menu is a portal outside this element, so a click on it
+      // would otherwise dismiss the popover the menu belongs to.
+      if (shareAnchor) return;
+      dismiss();
+    },
+    [shareAnchor],
+  );
 
   useEffect(() => {
     const container = containerRef.current;
@@ -179,6 +189,29 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
 
     setPlacement({ top, left });
   }, [anchor, containerRef, selectedText, section, timeRange]);
+
+  // A citation points at the passage, so the link carries the span the reader
+  // selected — the story page seeks to `start` and marks through to `end`.
+  const shareUrl = storyHubPage?.uuid
+    ? buildStoryShareUrl({
+        storyId: storyHubPage.uuid,
+        startTime: section ? section.start : timeRange?.startTime,
+        endTime: section ? undefined : timeRange?.endTime,
+      })
+    : '';
+
+  const shareCaption = section
+    ? [section.title, formatShareTimestamp(section.start) && `from ${formatShareTimestamp(section.start)}`]
+        .filter(Boolean)
+        .join(' · ')
+    : [
+        formatShareTimestamp(timeRange?.startTime) &&
+          `From ${formatShareTimestamp(timeRange?.startTime)}${
+            formatShareTimestamp(timeRange?.endTime) ? ` to ${formatShareTimestamp(timeRange?.endTime)}` : ''
+          }`,
+      ]
+        .filter(Boolean)
+        .join('');
 
   const handleAskAI = () => {
     if (!selectedText) return;
@@ -229,9 +262,10 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
   const showAskAI = isChatEnabled;
   const showZoteroButton = showZotero && timeRange;
   const showSuggest = isSuggestionsEnabled;
+  const showShare = Boolean(shareUrl);
 
   if (!anchor || !selectedText) return null;
-  if (!showAskAI && !showZoteroButton && !showSuggest) return null;
+  if (!showAskAI && !showZoteroButton && !showSuggest && !showShare) return null;
 
   return (
     <Paper
@@ -263,7 +297,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
             fontSize: '0.8rem',
             whiteSpace: 'nowrap',
             borderRadius: 0,
-            borderRight: showZoteroButton || showSuggest ? '1px solid' : 'none',
+            borderRight: showZoteroButton || showSuggest || showShare ? '1px solid' : 'none',
             borderColor: 'divider',
           }}>
           Ask AI
@@ -281,7 +315,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
             fontSize: '0.8rem',
             whiteSpace: 'nowrap',
             borderRadius: 0,
-            borderRight: showSuggest ? '1px solid' : 'none',
+            borderRight: showSuggest || showShare ? '1px solid' : 'none',
             borderColor: 'divider',
           }}>
           Zotero
@@ -303,6 +337,37 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
           {section ? 'Suggest a correction to this chapter' : 'Suggest a correction'}
         </Button>
       )}
+      {showShare && (
+        <Button
+          size="small"
+          startIcon={<ShareIcon sx={{ fontSize: 16 }} />}
+          onClick={(event) => setShareAnchor(event.currentTarget)}
+          aria-haspopup="menu"
+          aria-expanded={Boolean(shareAnchor)}
+          sx={{
+            textTransform: 'none',
+            px: 1.5,
+            py: 0.75,
+            fontSize: '0.8rem',
+            whiteSpace: 'nowrap',
+            borderRadius: 0,
+            borderLeft: '1px solid',
+            borderColor: 'divider',
+          }}>
+          Share
+        </Button>
+      )}
+      <ShareMenu
+        anchorEl={shareAnchor}
+        open={Boolean(shareAnchor)}
+        onClose={() => {
+          setShareAnchor(null);
+          dismiss();
+        }}
+        url={shareUrl}
+        title={(storyHubPage?.properties?.interview_title as string) || 'Recording'}
+        caption={shareCaption || undefined}
+      />
     </Paper>
   );
 };

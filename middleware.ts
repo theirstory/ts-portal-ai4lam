@@ -28,9 +28,13 @@ export function middleware(request: NextRequest) {
 
   // 4. Redirect to gatekeeper if not authenticated
   const url = request.nextUrl.clone();
+  // The query string is part of where they were going: a shared link to a
+  // moment carries ?start=&end=, and sending them back to the bare path would
+  // drop them at the top of an hour-long recording instead.
+  const callbackUrl = `${pathname}${request.nextUrl.search}`;
   url.pathname = '/gatekeeper';
-  // Store the original path to redirect back after login
-  url.searchParams.set('callbackUrl', pathname);
+  url.search = '';
+  url.searchParams.set('callbackUrl', callbackUrl);
 
   return NextResponse.redirect(url);
 }

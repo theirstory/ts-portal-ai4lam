@@ -20,7 +20,11 @@ function GatekeeperContent() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const searchParams = useSearchParams();
-  const callbackUrl = searchParams.get('callbackUrl') || '/';
+  // Only ever a path on this site. A single leading slash, and not "//host",
+  // which the browser would read as another origin — this value arrives in a
+  // link anyone can write.
+  const requestedCallback = searchParams.get('callbackUrl') || '/';
+  const callbackUrl = /^\/(?!\/)/.test(requestedCallback) ? requestedCallback : '/';
 
   const orgName = organizationConfig.displayName || organizationConfig.name || 'Protected Portal';
 
