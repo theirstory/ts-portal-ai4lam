@@ -1,7 +1,8 @@
 'use client';
 
-import { Box, Typography, Accordion, AccordionSummary, AccordionDetails, Button } from '@mui/material';
+import { Box, Typography, Accordion, AccordionDetails, Button, IconButton } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import ExpandLessIcon from '@mui/icons-material/ExpandLess';
 import { StoryTranscriptToolbar } from './StoryTranscriptToolbar';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 import { StoryTranscriptParagraph } from './StoryTranscriptParagraph';
@@ -10,6 +11,7 @@ import { useTranscriptPanelStore } from '@/app/stores/useTranscriptPanelStore';
 import usePlayerStore from '@/app/stores/usePlayerStore';
 import { useSearchParams } from 'next/navigation';
 import { colors } from '@/lib/theme';
+import { formatTime } from '@/app/utils/util';
 import { useTranscriptNavigation } from '@/app/hooks/useTranscriptNavigation';
 import { scrollElementIntoContainer } from '@/app/utils/scrollElementIntoContainer';
 import { StoryTranscriptSelectionPopover } from './StoryTranscriptSelectionPopover';
@@ -314,47 +316,105 @@ export const StoryTranscriptPanel = ({ isMobile = false }: StoryTranscriptPanelP
 
           const isExpanded = !!expandedSections[section.start];
 
+          // Controlled, and with no onChange: nothing in the header toggles it
+          // except the chevron below.
           return (
-            <Accordion
-              key={section.start}
-              expanded={isExpanded}
-              onChange={() => {
-                // A drag that left text selected was an attempt to quote this
-                // chapter, not to collapse it — closing the section on mouseup
-                // would take the selection away with it. The ref covers the
-                // click that follows: dismissing the popover is a click to get
-                // rid of the popover, and by then the browser has already
-                // cleared the selection this guard would have seen.
-                if (suppressSectionToggleRef.current || window.getSelection()?.toString().trim()) {
-                  suppressSectionToggleRef.current = false;
-                  return;
-                }
-                toggleSection(section.start);
-              }}>
-              <AccordionSummary
-                sx={{ backgroundColor: colors.primary.main, borderRadius: 1 }}
-                expandIcon={<ExpandMoreIcon />}
+            <Accordion key={section.start} expanded={isExpanded}>
+              {/* Not an AccordionSummary: the row's own click now seeks the
+                  media, so the whole header must not double as the control
+                  that expands it. The chevron beside it is that control, and
+                  says so. */}
+              <Box
+                data-section-start={section.start}
+                data-section-title={section.title}
                 onMouseDown={() => {
+                  // Whether a selection was standing as this click began. The
+                  // browser clears it during mousedown, so by the time the
+                  // click lands there is nothing left to read.
                   suppressSectionToggleRef.current = Boolean(window.getSelection()?.toString().trim());
                 }}
-                data-section-start={section.start}
-                data-section-title={section.title}>
+                onClick={() => {
+                  // A click that ends a selection, or dismisses the popover it
+                  // raised, is not a request to move the recording.
+                  if (suppressSectionToggleRef.current || window.getSelection()?.toString().trim()) {
+                    suppressSectionToggleRef.current = false;
+                    return;
+                  }
+                  seekAndScroll(section.start);
+                }}
+                sx={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 1,
+                  px: 1.5,
+                  py: 1.5,
+                  cursor: 'pointer',
+                  backgroundColor: colors.primary.main,
+                  borderRadius: 1,
+                }}>
+                <IconButton
+                  size="small"
+                  aria-expanded={isExpanded}
+                  aria-label={`${isExpanded ? 'Collapse' : 'Expand'} ${section.title}`}
+                  onClick={(event) => {
+                    // The row seeks; only this expands.
+                    event.stopPropagation();
+                    toggleSection(section.start);
+                  }}
+                  sx={{
+                    color: colors.common.white,
+                    p: 0.25,
+                    mt: '-2px',
+                    flexShrink: 0,
+                    '&:hover': { backgroundColor: 'rgba(255,255,255,0.16)' },
+                  }}>
+                  {isExpanded ? <ExpandLessIcon /> : <ExpandMoreIcon />}
+                </IconButton>
+
                 <Box
                   display="flex"
                   flexDirection="column"
                   gap={1}
-                  // Selectable despite sitting inside a button: an index entry
-                  // is a claim a reader may want to quote and correct. The
-                  // pointer is inherited from the summary, so only the words
-                  // themselves show a text cursor — the rest of the row still
-                  // looks like what it is, a control that opens the chapter.
-                  // flex-start so each line hugs its own text: the I-beam then
-                  // covers the words rather than the empty width beside them.
                   alignItems="flex-start"
-                  sx={{ userSelect: 'text', '& > *': { cursor: 'text' } }}>
-                  <Typography variant="subtitle1" fontWeight="bold" color={colors.common.white}>
-                    {section.title}
-                  </Typography>
+                  // Selectable despite the row being clickable: an index entry
+                  // is a claim a reader may want to quote and correct. Only the
+                  // words take a text cursor — the rest of the row still looks
+                  // like what it is, a control.
+                  // Targets the words themselves rather than every child, so
+                  // the timestamp button inside keeps its pointer.
+                  sx={{ userSelect: 'text', minWidth: 0, '& .MuiTypography-root': { cursor: 'text' } }}>
+                  <Box display="flex" alignItems="baseline" gap={1} flexWrap="wrap">
+                    {/* Where the chapter starts, and the keyboard's way to play
+                        from there — the row's own click is mouse-only. */}
+                    <Box
+                      component="button"
+                      type="button"
+                      onClick={(event: React.MouseEvent) => {
+                        event.stopPropagation();
+                        seekAndScroll(section.start);
+                      }}
+                      aria-label={`Play from ${formatTime(section.start)}, ${section.title}`}
+                      sx={{
+                        border: '1px solid rgba(255,255,255,0.45)',
+                        borderRadius: '4px',
+                        backgroundColor: 'transparent',
+                        color: colors.common.white,
+                        font: 'inherit',
+                        fontSize: '12px',
+                        fontWeight: 700,
+                        lineHeight: 1,
+                        px: 0.75,
+                        py: 0.4,
+                        cursor: 'pointer',
+                        flexShrink: 0,
+                        '&:hover': { backgroundColor: 'rgba(255,255,255,0.16)' },
+                      }}>
+                      {formatTime(section.start)}
+                    </Box>
+                    <Typography variant="subtitle1" fontWeight="bold" color={colors.common.white}>
+                      {section.title}
+                    </Typography>
+                  </Box>
 
                   {section.synopsis && (
                     <Typography fontSize="12px" color={colors.common.white}>
@@ -362,7 +422,7 @@ export const StoryTranscriptPanel = ({ isMobile = false }: StoryTranscriptPanelP
                     </Typography>
                   )}
                 </Box>
-              </AccordionSummary>
+              </Box>
               <AccordionDetails sx={{ paddingX: '8px' }}>
                 {sectionParagraphs.map((paragraph) => {
                   const wordsInParagraph = paragraph.words || [];
