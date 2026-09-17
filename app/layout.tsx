@@ -20,7 +20,10 @@ const siteDescription = organizationConfig.description;
  * relative path is what leaves Slack showing an empty image frame.
  */
 const siteUrl = (organizationConfig.siteUrl || process.env.NEXT_PUBLIC_SITE_URL || '').trim();
-const socialImage = organizationConfig.socialImage || '/images/og-image.jpg';
+// Versioned filename: Slack and the other unfurlers cache the image by URL, so
+// replacing the artwork under the same name leaves every existing preview
+// showing the old picture. A new name is what makes them refetch.
+const socialImage = organizationConfig.socialImage || '/images/og-image-v2.jpg';
 
 export const metadata: Metadata = {
   ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),

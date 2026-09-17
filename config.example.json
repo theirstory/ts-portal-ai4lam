@@ -5,7 +5,7 @@
     "displayName": "Your Portal Title",
     "description": "Description of your portal and collection. This appears on the main page.",
     "siteUrl": "",
-    "socialImage": "/images/og-image.jpg",
+    "socialImage": "/images/og-image-v2.jpg",
     "logo": {
       "_comment": "Optional custom logo path from /public (example: /images/logo.png or /images/logo.svg). If empty, default LogoArchive is used.",
       "path": "",
