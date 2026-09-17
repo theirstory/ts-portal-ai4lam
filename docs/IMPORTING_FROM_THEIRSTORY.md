@@ -80,6 +80,35 @@ yarn theirstory:import-stories --ids '6998c9f5af83ef7a86a3a5a7' --unpublish
 - Adds `mux_playback_id` extracted from the Mux URL
 - Saves one JSON per story under `json/interviews/imported/`
 
+## Transcript Corrections
+
+Speech-to-text mishears terms it has no vocabulary for. This archive has seen
+"FADGI" written as "Fiji" and, twice, as a slur, and the company "TheirStory"
+written as the two ordinary words "their story".
+
+`TRANSCRIPT_CORRECTIONS` in `scripts/import-theirstory-stories.ts` fixes these
+on the way in. Each entry names the spoken tokens and what they should read as:
+
+```ts
+{ from: ['fiji'], to: 'FADGI', note: 'Federal Agencies Digital Guidelines Initiative' },
+{ from: ['their', 'story'], to: 'TheirStory', note: 'the company, heard as two ordinary words' },
+```
+
+Corrections apply to the timed word stream, the full transcript text, the story
+description, and the generated index titles, synopses and notes — the last of
+those are written from the transcript and inherit its errors.
+
+A multi-word entry collapses its tokens into one and keeps the span they
+covered, so transcript and captions stay aligned. Matching respects word
+boundaries, so "Fijian" is left alone, and only the exact token sequence is
+matched, so "their stories" — a real plural, not the company — is untouched.
+
+These files are regenerated on every import, so corrections made by hand are
+lost the next time a recording is pulled. Add them here instead.
+
+The durable fix is a custom vocabulary on the recogniser; every entry in this
+list is a term worth adding there.
+
 ## Useful Flags
 
 - `--out-dir json/interviews/my-batch`

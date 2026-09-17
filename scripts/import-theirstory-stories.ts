@@ -100,6 +100,178 @@ function extractMuxPlaybackId(videoUrl: string): string {
   return match[1];
 }
 
+
+/* ------------------------------------------------- transcript corrections */
+
+type TranscriptCorrection = {
+  /** The spoken tokens as the recogniser wrote them, lowercased, one per word. */
+  from: string[];
+  /** What they should read as, always a single token. */
+  to: string;
+  /** Why this correction exists, for whoever reads the list next. */
+  note: string;
+};
+
+/**
+ * Fixes speech-to-text mishearings of terms the recogniser has no vocabulary
+ * for. These files are regenerated on every import, so corrections applied by
+ * hand are lost the next time a recording is pulled — they have to live here.
+ *
+ * Entries are matched case-insensitively and applied to the word stream, the
+ * full transcript text, the story description, and the generated index titles,
+ * synopses and notes, since the last of those are written from the transcript
+ * and inherit its errors.
+ *
+ * The real fix is a custom vocabulary on the recogniser. This is the fallback
+ * until that exists, and every entry here is a term worth adding there.
+ */
+const TRANSCRIPT_CORRECTIONS: TranscriptCorrection[] = [
+  { from: ['fiji'], to: 'FADGI', note: 'Federal Agencies Digital Guidelines Initiative' },
+  { from: ['faggy'], to: 'FADGI', note: 'FADGI, misheard as a slur' },
+  { from: ['faggot'], to: 'FADGI', note: 'FADGI, misheard as a slur' },
+  { from: ['their', 'story'], to: 'TheirStory', note: 'the company, heard as two ordinary words' },
+  { from: ['there', 'story'], to: 'TheirStory', note: 'the company, heard as two ordinary words' },
+];
+
+
+const stripEdges = (value: string) => value.replace(/^[\s.,!?;:"']+|[\s.,!?;:"']+$/g, '');
+
+/**
+ * Applies the corrections to plain text. Word boundaries keep "Fiji" from
+ * matching inside a longer word, and the tokens are joined by flexible
+ * whitespace so a phrase split across a line break still matches.
+ */
+function correctText(value: string): { text: string; count: number } {
+  let count = 0;
+  let result = value;
+
+  for (const correction of TRANSCRIPT_CORRECTIONS) {
+    const pattern = new RegExp(`\\b${correction.from.join('\\s+')}\\b`, 'gi');
+    result = result.replace(pattern, () => {
+      count += 1;
+      return correction.to;
+    });
+  }
+
+  return { text: result, count };
+}
+
+/**
+ * Applies the corrections to the timed word stream.
+ *
+ * A multi-word correction collapses its tokens into one, keeping the span they
+ * covered — the replacement is one word where there were two, so its timing has
+ * to cover both or the transcript and the captions drift apart. Trailing
+ * punctuation from the last token is preserved.
+ */
+function correctWords(words: unknown[]): { words: unknown[]; count: number } {
+  const out: unknown[] = [];
+  let count = 0;
+  let index = 0;
+
+  while (index < words.length) {
+    const word = words[index];
+    const record = word && typeof word === 'object' ? (word as Record<string, unknown>) : null;
+    const text = typeof record?.text === 'string' ? record.text : '';
+    const bare = stripEdges(text).toLowerCase();
+
+    const correction = TRANSCRIPT_CORRECTIONS.find((candidate) => {
+      if (candidate.from[0] !== bare) return false;
+      return candidate.from.every((token, offset) => {
+        const next = words[index + offset];
+        const nextRecord = next && typeof next === 'object' ? (next as Record<string, unknown>) : null;
+        const nextText = typeof nextRecord?.text === 'string' ? nextRecord.text : '';
+        return stripEdges(nextText).toLowerCase() === token;
+      });
+    });
+
+    if (correction && record) {
+      const last = words[index + correction.from.length - 1] as Record<string, unknown> | undefined;
+      const lastText = typeof last?.text === 'string' ? last.text : '';
+      const trailing = lastText.slice(lastText.replace(/[\s.,!?;:"']+$/g, '').length);
+
+      out.push({
+        ...record,
+        text: `${correction.to}${trailing}`,
+        end: last?.end ?? record.end,
+      });
+      count += 1;
+      index += correction.from.length;
+      continue;
+    }
+
+    out.push(word);
+    index += 1;
+  }
+
+  return { words: out, count };
+}
+
+/** Walks every string in the payload, leaving the timed word stream to correctWords. */
+function correctPayloadText(value: unknown): { value: unknown; count: number } {
+  if (typeof value === 'string') {
+    const { text, count } = correctText(value);
+    return { value: text, count };
+  }
+
+  if (Array.isArray(value)) {
+    let total = 0;
+    const mapped = value.map((entry) => {
+      const { value: next, count } = correctPayloadText(entry);
+      total += count;
+      return next;
+    });
+    return { value: mapped, count: total };
+  }
+
+  if (value && typeof value === 'object') {
+    let total = 0;
+    const mapped: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(value as Record<string, unknown>)) {
+      const { value: next, count } = correctPayloadText(entry);
+      total += count;
+      mapped[key] = next;
+    }
+    return { value: mapped, count: total };
+  }
+
+  return { value, count: 0 };
+}
+
+/**
+ * Corrects a whole story payload. The word stream is handled first and then
+ * excluded from the text pass, so a merged pair is not corrected twice.
+ */
+export function applyTranscriptCorrections(payload: Record<string, unknown>): {
+  payload: Record<string, unknown>;
+  wordCount: number;
+  textCount: number;
+} {
+  const transcript =
+    payload.transcript && typeof payload.transcript === 'object' && !Array.isArray(payload.transcript)
+      ? (payload.transcript as Record<string, unknown>)
+      : null;
+
+  let wordCount = 0;
+  let correctedWords: unknown[] | null = null;
+
+  if (Array.isArray(transcript?.words)) {
+    const result = correctWords(transcript.words as unknown[]);
+    correctedWords = result.words;
+    wordCount = result.count;
+  }
+
+  const withoutWords = transcript ? { ...payload, transcript: { ...transcript, words: [] } } : payload;
+  const { value, count: textCount } = correctPayloadText(withoutWords);
+  const corrected = value as Record<string, unknown>;
+
+  if (correctedWords && corrected.transcript && typeof corrected.transcript === 'object') {
+    (corrected.transcript as Record<string, unknown>).words = correctedWords;
+  }
+
+  return { payload: corrected, wordCount, textCount };
+}
+
 function buildOutputFileName(
   payload: Record<string, unknown>,
   storyId: string,
@@ -719,11 +891,19 @@ async function processStory(storyId: string, options: CliOptions): Promise<Proce
     publishedVideoUrl = await fetchPublishedMediaUrl(storyId, storyDetails.publishFormat, options);
   }
   const muxPlaybackId = extractMuxPlaybackId(publishedVideoUrl);
-  const finalPayload = {
+  const rawPayload = {
     ...storyDetails.transcriptPayload,
     videoURL: publishedVideoUrl,
     mux_playback_id: muxPlaybackId,
   };
+
+  const corrected = applyTranscriptCorrections(rawPayload);
+  const finalPayload = corrected.payload;
+  if (corrected.wordCount || corrected.textCount) {
+    console.log(
+      `[theirstory-import] ${storyId}: applied transcript corrections (${corrected.wordCount} in the word stream, ${corrected.textCount} in text).`,
+    );
+  }
 
   const outPath = resolve(join(options.outDir, buildOutputFileName(finalPayload, storyId, storyDetails.publishFormat)));
 
