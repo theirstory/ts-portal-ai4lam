@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef } from 'react';
-import { usePathname, useRouter, useSearchParams } from 'next/navigation';
+import { usePathname, useSearchParams } from 'next/navigation';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 import { useThreshold } from '@/app/stores/useThreshold';
 import { SchemaTypes } from '@/types/weaviate';
@@ -46,7 +46,6 @@ const isSearchType = (value: string | null): value is SearchType =>
  * otherwise become a separate back-button step.
  */
 export const useRecordingsUrlState = () => {
-  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const { minValue, maxValue } = useThreshold();
@@ -78,6 +77,10 @@ export const useRecordingsUrlState = () => {
   // the destination's URL with recordings params — cancelling the navigation
   // and dropping the reader back here.
   const ownPathnameRef = useRef(pathname);
+  // What this hook last put in the URL. Comparing against searchParams instead
+  // fed the effect its own output: every write changed searchParams, which
+  // re-ran the effect, which wrote again.
+  const lastWrittenRef = useRef<string | null>(null);
 
   const runSearchFor = useCallback(
     (type: SearchType, entities: NerEntityFilter[]) => {
@@ -171,15 +174,25 @@ export const useRecordingsUrlState = () => {
     if (resultsFilterTerm.trim()) params.set(PARAM.filter, resultsFilterTerm.trim());
 
     const next = params.toString();
-    if (next === searchParams.toString()) return;
+    if (lastWrittenRef.current === null) {
+      // Seed from the URL the page opened with, so restoring a shared link
+      // does not immediately rewrite the identical URL back over itself.
+      lastWrittenRef.current = searchParams.toString();
+    }
+    if (next === lastWrittenRef.current) return;
+    lastWrittenRef.current = next;
 
-    router.replace(next ? `${pathname}?${next}` : pathname, { scroll: false });
+    // history.replaceState rather than router.replace: this only records
+    // where the reader is, and a router navigation would refetch the route
+    // on every filter change — which is what turned a search into hundreds of
+    // requests and left clicks unable to land.
+    const url = next ? `${pathname}?${next}` : pathname;
+    window.history.replaceState(window.history.state, '', url);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     hasSearched,
     pathname,
     resultsFilterTerm,
-    router,
-    searchParams,
     searchTerm,
     searchType,
     selectedCollectionIds,
