@@ -11,6 +11,7 @@ import { durationFormatHandler, formatTime } from '@/app/utils/util';
 import { colors } from '@/lib/theme';
 import { highlightSearchText } from '@/app/indexes/highlightSearch';
 import { SuggestCorrectionButton } from '@/components/suggestions/SuggestCorrectionButton';
+import { buildStoryShareUrl } from '@/lib/share';
 import type { IndexesStory, IndexChapter } from '@/app/api/indexes/route';
 import type { WeaviateGenericObject } from 'weaviate-client';
 import type { Testimonies } from '@/types/weaviate';
@@ -118,6 +119,9 @@ export function IndexesListView({
                     recordingTitle: story.interview_title,
                     field: 'Index entry',
                     quotedText: story.interview_title,
+                    // The recording itself, not the /indexes page the reader
+                    // happened to raise it from.
+                    pageUrl: buildStoryShareUrl({ storyId: story.uuid }),
                   }}
                   label="Suggest a correction to this index entry"
                 />
@@ -194,6 +198,8 @@ export function IndexesListView({
                           field: `Chapter at ${formatTime(ch.start_time)}`,
                           quotedText: [ch.section_title, ch.synopsis].filter(Boolean).join('\n\n'),
                           startTime: ch.start_time,
+                          // Opens the recording where the chapter starts.
+                          pageUrl: buildStoryShareUrl({ storyId: story.uuid, startTime: ch.start_time }),
                         }}
                         label="Suggest a correction to this chapter"
                       />

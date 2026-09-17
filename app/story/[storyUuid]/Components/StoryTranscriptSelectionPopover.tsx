@@ -41,7 +41,25 @@ function getSelectionTimeRange(container: HTMLElement): { startTime: number; end
     }
   }
 
-  return found ? { startTime: minStart, endTime: maxEnd } : null;
+  if (found) return { startTime: minStart, endTime: maxEnd };
+
+  // Nothing in the selection was a timed word — a speaker label, say, which is
+  // exactly the kind of thing a reader corrects. The paragraph it sits in still
+  // knows when it is, and a correction with no moment attached is one an
+  // archivist has to go hunting for.
+  const node = selection.getRangeAt(0).commonAncestorContainer;
+  const element = node.nodeType === Node.ELEMENT_NODE ? (node as HTMLElement) : node.parentElement;
+  const paragraph = element?.closest<HTMLElement>('[data-paragraph-start]');
+  if (!paragraph || !container.contains(paragraph)) return null;
+
+  const paragraphStart = parseFloat(paragraph.dataset.paragraphStart || '');
+  const paragraphEnd = parseFloat(paragraph.dataset.paragraphEnd || '');
+  if (!Number.isFinite(paragraphStart)) return null;
+
+  return {
+    startTime: paragraphStart,
+    endTime: Number.isFinite(paragraphEnd) ? paragraphEnd : paragraphStart,
+  };
 }
 
 /** Where the selection sits, in the scroll container's own coordinates. */
@@ -246,6 +264,9 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
             field: [section.title, formatTimestamp(section.start) && `at ${formatTimestamp(section.start)}`]
               .filter(Boolean)
               .join(' '),
+            // The same link Share produces: whoever picks the issue up lands on
+            // the moment being questioned rather than the top of the recording.
+            pageUrl: shareUrl || undefined,
           }
         : {
             kind: 'transcript',
@@ -253,6 +274,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
             ...recording,
             startTime: timeRange?.startTime,
             endTime: timeRange?.endTime,
+            pageUrl: shareUrl || undefined,
           },
     );
     dismiss();
