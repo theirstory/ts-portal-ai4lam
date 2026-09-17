@@ -57,8 +57,10 @@ export const CarouselTopBar = ({ children, isCollapsed }: { children: React.Reac
           width: '100%',
           height: isCollapsed ? '100%' : '50%',
           pointerEvents: 'none',
+          // Gradient only, no backdrop blur: the artwork is the point of the
+          // hero, and softening it to buy contrast the gradient already
+          // provides just made the image look out of focus.
           background: colors.gradients.overlay,
-          backdropFilter: 'blur(2px)',
           zIndex: 1,
           transition: 'height 0.65s cubic-bezier(0.22, 1, 0.36, 1)',
         },
