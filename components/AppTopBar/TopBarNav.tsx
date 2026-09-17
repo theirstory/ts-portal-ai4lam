@@ -163,7 +163,7 @@ export const TopBarNav = ({
             )}
             {isZoteroEnabled && (
               <Box sx={{ px: 2, py: 1 }}>
-                <ZoteroAuthButton />
+                <ZoteroAuthButton variant="menu" />
               </Box>
             )}
             <Divider />
