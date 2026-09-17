@@ -49,6 +49,9 @@ export const StoryTranscriptPanel = ({ isMobile = false }: StoryTranscriptPanelP
    */
   const isProgrammaticScrollRef = useRef(false);
   const transcriptContentRef = useRef<HTMLDivElement>(null);
+  // Set on mousedown, read on the click that follows: whether a selection was
+  // standing when this click began. See the chapter's onChange below.
+  const suppressSectionToggleRef = useRef(false);
 
   /**
    * Popover search + Zotero state
@@ -318,13 +321,22 @@ export const StoryTranscriptPanel = ({ isMobile = false }: StoryTranscriptPanelP
               onChange={() => {
                 // A drag that left text selected was an attempt to quote this
                 // chapter, not to collapse it — closing the section on mouseup
-                // would take the selection away with it.
-                if (window.getSelection()?.toString().trim()) return;
+                // would take the selection away with it. The ref covers the
+                // click that follows: dismissing the popover is a click to get
+                // rid of the popover, and by then the browser has already
+                // cleared the selection this guard would have seen.
+                if (suppressSectionToggleRef.current || window.getSelection()?.toString().trim()) {
+                  suppressSectionToggleRef.current = false;
+                  return;
+                }
                 toggleSection(section.start);
               }}>
               <AccordionSummary
                 sx={{ backgroundColor: colors.primary.main, borderRadius: 1 }}
                 expandIcon={<ExpandMoreIcon />}
+                onMouseDown={() => {
+                  suppressSectionToggleRef.current = Boolean(window.getSelection()?.toString().trim());
+                }}
                 data-section-start={section.start}
                 data-section-title={section.title}>
                 <Box
@@ -332,8 +344,14 @@ export const StoryTranscriptPanel = ({ isMobile = false }: StoryTranscriptPanelP
                   flexDirection="column"
                   gap={1}
                   // Selectable despite sitting inside a button: an index entry
-                  // is a claim a reader may want to quote and correct.
-                  sx={{ userSelect: 'text', cursor: 'auto' }}>
+                  // is a claim a reader may want to quote and correct. The
+                  // pointer is inherited from the summary, so only the words
+                  // themselves show a text cursor — the rest of the row still
+                  // looks like what it is, a control that opens the chapter.
+                  // flex-start so each line hugs its own text: the I-beam then
+                  // covers the words rather than the empty width beside them.
+                  alignItems="flex-start"
+                  sx={{ userSelect: 'text', '& > *': { cursor: 'text' } }}>
                   <Typography variant="subtitle1" fontWeight="bold" color={colors.common.white}>
                     {section.title}
                   </Typography>
