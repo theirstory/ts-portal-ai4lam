@@ -73,7 +73,7 @@ export const SearchBox = ({
     folders,
   } = useSemanticSearchStore();
   const { minValue, maxValue } = useThreshold();
-  const { isTopBarCollapsed, setTopBarCollapsedAuto } = useLayoutState();
+  const { setTopBarCollapsedAuto } = useLayoutState();
   const hasMultipleCollections = collections.length > 1;
   const hasFolders = folders.length > 0;
   const mobilePrimaryFlex = hasMultipleCollections ? 5.5 : 7.5;
@@ -301,16 +301,17 @@ export const SearchBox = ({
                 )}
               </Box>
             </Box>
-            {!isTopBarCollapsed && (
-              <ToggleButtonGroup value={viewMode} exclusive onChange={onViewChange} aria-label="view mode" size="small">
-                <ToggleButton value="list" aria-label="list view">
-                  <ViewListIcon />
-                </ToggleButton>
-                <ToggleButton value="grid" aria-label="grid view">
-                  <ViewModuleIcon />
-                </ToggleButton>
-              </ToggleButtonGroup>
-            )}
+            {/* Always present: scrolling collapses the hero, and hiding the
+                toggle with it took away the control just as a reader got far
+                enough into the list to want the other layout. */}
+            <ToggleButtonGroup value={viewMode} exclusive onChange={onViewChange} aria-label="view mode" size="small">
+              <ToggleButton value="list" aria-label="list view">
+                <ViewListIcon />
+              </ToggleButton>
+              <ToggleButton value="grid" aria-label="grid view">
+                <ViewModuleIcon />
+              </ToggleButton>
+            </ToggleButtonGroup>
           </Box>
         </Box>
       )}

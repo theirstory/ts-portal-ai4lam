@@ -32,7 +32,9 @@ export default function CollectionLayout() {
     searchTerm,
   } = useSemanticSearchStore();
   const { setTopBarCollapsedAuto } = useLayoutState();
-  const [viewMode, setViewMode] = useState<'list' | 'grid'>('list');
+  // Grid by default: the cards lead with a still frame, which is how a reader
+  // tells these recordings apart at a glance.
+  const [viewMode, setViewMode] = useState<'list' | 'grid'>('grid');
 
   const storiesTestimonies = stories as WeaviateReturn<Testimonies, any> | null;
   const results = result?.objects || [];

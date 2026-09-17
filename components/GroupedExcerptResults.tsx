@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import { Box, Collapse, IconButton, InputAdornment, TextField, Typography } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
@@ -127,6 +127,14 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
   const resultsFilter = useSemanticSearchStore((state) => state.resultsFilterTerm);
   const setResultsFilter = useSemanticSearchStore((state) => state.setResultsFilterTerm);
 
+  // The narrowing box pins to the top of the results, so it is still reachable
+  // after scrolling into a long list — it belongs to the results the way the
+  // search field belongs to the page. Its measured height then becomes the
+  // offset the recording headers pin below, rather than a hard-coded number
+  // that a wrapped filter row on a narrow screen would get wrong.
+  const filterBarRef = useRef<HTMLDivElement | null>(null);
+  const [filterBarHeight, setFilterBarHeight] = useState(0);
+
   const filterTerm = resultsFilter.trim();
   // Narrowing happens over the excerpts already on screen rather than by
   // re-querying, so it stays instant and can only ever reduce what is shown.
@@ -180,9 +188,37 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
 
   const totalExcerpts = excerpts.length;
   const shownExcerpts = visibleExcerpts.length;
+  const hasFilterBar = totalExcerpts > 0;
+
+  useEffect(() => {
+    const node = filterBarRef.current;
+    if (!node) {
+      setFilterBarHeight(0);
+      return;
+    }
+    const measure = () => setFilterBarHeight(node.offsetHeight);
+    measure();
+    if (typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(measure);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, [hasFilterBar]);
 
   const filterBox = totalExcerpts > 0 && (
-    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5, mb: 1.5, flexWrap: 'wrap' }}>
+    <Box
+      ref={filterBarRef}
+      sx={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 1.5,
+        pb: 1.5,
+        flexWrap: 'wrap',
+        position: 'sticky',
+        top: 0,
+        zIndex: 3,
+        // Opaque, and matching the page behind it: excerpts scroll under this.
+        bgcolor: colors.background.mainPage,
+      }}>
       <TextField
         size="small"
         placeholder="Filter these results..."
@@ -265,7 +301,8 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                 // can collapse it without scrolling back up. The next group's
                 // header pushes this one away as it arrives.
                 position: 'sticky',
-                top: 0,
+                // Below the filter bar rather than under it.
+                top: `${filterBarHeight}px`,
                 zIndex: 2,
                 borderRadius: '8px 8px 0 0',
                 // Opaque: excerpts scroll underneath it.
