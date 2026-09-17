@@ -269,8 +269,24 @@ export const AppTopBar = () => {
               transition: 'max-height 0.65s cubic-bezier(0.22, 1, 0.36, 1), opacity 0.35s ease, transform 0.45s ease',
             }}>
             <Box
-              sx={
-                isHeaderOverlayEnabled
+              // A tab stop on the hero, so a keyboard user reaches the name and
+              // description of what they are looking at rather than skipping
+              // from the nav straight into results.
+              //
+              // Removed from the tab order while the hero is collapsed: the
+              // container is aria-hidden and clipped to zero height then, and a
+              // focusable element inside that is both an accessibility error and
+              // a way to send focus somewhere invisible.
+              tabIndex={isTopBarCollapsed ? -1 : 0}
+              role="group"
+              aria-label={`${organizationConfig.displayName}, portal overview`}
+              sx={{
+                // Focus has to be visible, or this reads as focus vanishing.
+                '&:focus-visible': {
+                  outline: `2px solid ${config.theme.colors.primary.contrastText}`,
+                  outlineOffset: '3px',
+                },
+                ...(isHeaderOverlayEnabled
                   ? {
                       display: 'inline-flex',
                       flexDirection: 'column',
@@ -283,8 +299,8 @@ export const AppTopBar = () => {
                       px: '14px',
                       py: '10px',
                     }
-                  : undefined
-              }>
+                  : {}),
+              }}>
               <Typography
                 variant="h4"
                 fontWeight={700}
