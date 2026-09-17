@@ -121,6 +121,14 @@ export interface AppConfig {
     portalHeaderOverlay?: {
       enabled?: boolean;
     };
+    /**
+     * Links out of the portal, shown in the top bar beside the internal nav.
+     * Each opens in a new tab, so the reader does not lose the archive.
+     */
+    externalNavLinks?: {
+      label: string;
+      href: string;
+    }[];
   };
   features?: FeaturesConfig;
   ner: {
@@ -139,6 +147,9 @@ export const nerLabels = config.ner.labels;
 export const nerFallbackColors = config.ner.fallbackColors;
 export const isChatEnabled = config.features?.chat?.enabled ?? false;
 export const isZoteroEnabled = config.features?.zotero?.enabled ?? false;
+export const externalNavLinks = (config.ui?.externalNavLinks ?? []).filter(
+  (link) => link?.label?.trim() && link?.href?.trim(),
+);
 
 const normalize = (value: string) => value?.trim()?.toLowerCase();
 

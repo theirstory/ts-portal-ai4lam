@@ -90,7 +90,9 @@
     "portalHeaderOverlay": {
       "_comment": "Enable or disable overlay behind portal title/description.",
       "enabled": true
-    }
+    },
+    "_externalNavLinksComment": "Optional links out of the portal, shown in the top bar. Each opens in a new tab. Example: [{ \"label\": \"WORKING GROUP\", \"href\": \"https://example.org/group\" }]",
+    "externalNavLinks": []
   },
   "features": {
     "chat": {

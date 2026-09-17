@@ -7,11 +7,12 @@ import { Box, Typography, IconButton, Tooltip } from '@mui/material';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 import { LogoArchive } from '@/app/assets/svg/LogoArchive';
 import { CarouselTopBar } from '../CarouselTopBar/CarouselTopBar';
 import useLayoutState from '@/app/stores/useLayout';
 import { usePathname, useSearchParams } from 'next/navigation';
-import { config, organizationConfig, isChatEnabled, isZoteroEnabled } from '@/config/organizationConfig';
+import { config, organizationConfig, isChatEnabled, isZoteroEnabled, externalNavLinks } from '@/config/organizationConfig';
 import { ZoteroAuthButton } from '@/components/zotero/ZoteroAuthButton';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 import { colors } from '@/lib/theme';
@@ -148,6 +149,11 @@ export const AppTopBar = () => {
                 {!isHomePage && <Link href="/">RECORDINGS</Link>}
                 {!isIndexPage && <Link href="/indexes">INDEXES</Link>}
                 {shouldShowCollectionsLink && !isCollectionsPage && <Link href="/collections">COLLECTIONS</Link>}
+                {externalNavLinks.map((link) => (
+                  <a key={link.href} href={link.href} target="_blank" rel="noopener noreferrer">
+                    {link.label}
+                  </a>
+                ))}
                 {!isFullScreenPage && (
                   <Tooltip title={isTopBarCollapsed ? 'Expand' : 'Collapse'}>
                     <IconButton
@@ -191,6 +197,20 @@ export const AppTopBar = () => {
                 <Link href="/">RECORDINGS</Link>
                 <Link href="/indexes">INDEXES</Link>
                 {shouldShowCollectionsLink && <Link href="/collections">COLLECTIONS</Link>}
+                {/* Leaves the portal, so it is marked as such and opens in a new
+                    tab rather than replacing the archive the reader is in. */}
+                {externalNavLinks.map((link) => (
+                  <Box
+                    key={link.href}
+                    component="a"
+                    href={link.href}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    sx={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                    {link.label}
+                    <OpenInNewIcon sx={{ fontSize: 13 }} aria-hidden />
+                  </Box>
+                ))}
                 {isChatEnabled && (
                   <Box
                     component={Link}
