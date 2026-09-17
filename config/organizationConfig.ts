@@ -18,6 +18,14 @@ export interface OrganizationConfig {
   name: string;
   displayName: string;
   description: string;
+  /**
+   * Public URL of this portal, e.g. "https://ai4lam-stt.theirstory.io".
+   * Link previews need absolute image URLs, and the app has no other way to
+   * know where it is deployed. Falls back to NEXT_PUBLIC_SITE_URL.
+   */
+  siteUrl?: string;
+  /** Image shown when a link to this portal is shared, ideally 1200x630. */
+  socialImage?: string;
   logo?: {
     path?: string;
     alt?: string;

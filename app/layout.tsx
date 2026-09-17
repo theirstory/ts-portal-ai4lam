@@ -14,18 +14,42 @@ const siteTitle =
     : organizationConfig.displayName || organizationConfig.name;
 const siteDescription = organizationConfig.description;
 
+/**
+ * Where this portal is deployed. Link previews have to name images by absolute
+ * URL, and a server component has no way to know the host otherwise — a
+ * relative path is what leaves Slack showing an empty image frame.
+ */
+const siteUrl = (organizationConfig.siteUrl || process.env.NEXT_PUBLIC_SITE_URL || '').trim();
+const socialImage = organizationConfig.socialImage || '/images/og-image.jpg';
+
 export const metadata: Metadata = {
+  ...(siteUrl ? { metadataBase: new URL(siteUrl) } : {}),
   title: siteTitle,
   description: siteDescription,
   openGraph: {
     title: siteTitle,
     description: siteDescription,
     type: 'website',
+    ...(siteUrl ? { url: siteUrl } : {}),
+    siteName: siteTitle,
+    images: [
+      {
+        // Served from public/, which the gatekeeper lets through because the
+        // path has a file extension — a preview crawler is never logged in.
+        url: socialImage,
+        width: 1200,
+        height: 630,
+        alt: siteTitle,
+      },
+    ],
   },
   twitter: {
-    card: 'summary',
+    // The large card is what shows the image rather than a thumbnail beside
+    // the text.
+    card: 'summary_large_image',
     title: siteTitle,
     description: siteDescription,
+    images: [socialImage],
   },
 };
 

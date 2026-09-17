@@ -1,17 +1,17 @@
 {
   "_comment": "This is an example configuration file. Copy this to config.json and customize for your organization.",
-
   "organization": {
     "name": "Your Organization Name",
     "displayName": "Your Portal Title",
     "description": "Description of your portal and collection. This appears on the main page.",
+    "siteUrl": "",
+    "socialImage": "/images/og-image.jpg",
     "logo": {
       "_comment": "Optional custom logo path from /public (example: /images/logo.png or /images/logo.svg). If empty, default LogoArchive is used.",
       "path": "",
       "alt": "Organization logo"
     }
   },
-
   "theme": {
     "colors": {
       "primary": {
@@ -76,20 +76,22 @@
       }
     }
   },
-
   "ui": {
     "carouselTopBar": {
       "intervalMs": 5000,
       "_comment": "Paths can be absolute (from /public) or full URLs. Leave images empty to use a solid backgroundColor.",
       "backgroundColor": "",
-      "images": ["/images/carousel1.jpg", "/images/carousel2.jpg", "/images/carousel3.jpg"]
+      "images": [
+        "/images/carousel1.jpg",
+        "/images/carousel2.jpg",
+        "/images/carousel3.jpg"
+      ]
     },
     "portalHeaderOverlay": {
       "_comment": "Enable or disable overlay behind portal title/description.",
       "enabled": true
     }
   },
-
   "features": {
     "chat": {
       "_comment": "Enable or disable the /discover page. When false, the Discover link is hidden from navigation.",
@@ -116,7 +118,6 @@
       "enabled": false
     }
   },
-
   "ner": {
     "labels": [
       {
