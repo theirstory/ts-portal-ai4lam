@@ -2,7 +2,9 @@
 
 import React, { useMemo } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { Box } from '@mui/material';
+import { colors } from '@/lib/theme';
 import { Citation } from '@/types/chat';
 import { ChatCitationChip } from './ChatCitationChip';
 
@@ -46,38 +48,84 @@ export const ChatMessageContent = ({ content, citations, messageId }: Props) => 
   }
 
   return (
-    <ReactMarkdown
-      components={{
-        p: ({ children }) => {
-          // Process children to replace citation patterns with chips
-          const processed = React.Children.map(children, (child) => {
-            if (typeof child === 'string') {
-              return <>{renderContentWithCitations(child)}</>;
-            }
-            return child;
-          });
-          return <p>{processed}</p>;
+    <Box
+      // Tables come back from the model often — a comparison of recordings, a
+      // list of speakers and dates — and unstyled they render as rows with no
+      // edges. They can also be wider than the chat column, so each one gets
+      // its own horizontal scroll rather than stretching the conversation.
+      sx={{
+        '& table': {
+          borderCollapse: 'collapse',
+          width: 'auto',
+          minWidth: '50%',
+          my: 1.5,
+          fontSize: '0.875rem',
         },
-        li: ({ children }) => {
-          const processed = React.Children.map(children, (child) => {
-            if (typeof child === 'string') {
-              return <>{renderContentWithCitations(child)}</>;
-            }
-            return child;
-          });
-          return <li>{processed}</li>;
+        '& th, & td': {
+          border: `1px solid ${colors.common.border}`,
+          px: 1.25,
+          py: 0.75,
+          textAlign: 'left',
+          verticalAlign: 'top',
         },
-        strong: ({ children }) => {
-          const processed = React.Children.map(children, (child) => {
-            if (typeof child === 'string') {
-              return <>{renderContentWithCitations(child)}</>;
-            }
-            return child;
-          });
-          return <strong>{processed}</strong>;
-        },
+        '& th': { backgroundColor: colors.background.subtle, fontWeight: 700 },
+        '& .markdown-table-scroll': { overflowX: 'auto', maxWidth: '100%' },
+        '& p:first-of-type': { mt: 0 },
+        '& p:last-of-type': { mb: 0 },
       }}>
-      {content}
-    </ReactMarkdown>
+      <ReactMarkdown
+        // GitHub-flavoured markdown: tables, strikethrough, task lists and bare
+        // URLs are all extensions, and without this the model's tables arrived
+        // as the pipes and dashes it wrote them with.
+        remarkPlugins={[remarkGfm]}
+        components={{
+          table: ({ children }) => (
+            <Box className="markdown-table-scroll">
+              <table>{children}</table>
+            </Box>
+          ),
+          p: ({ children }) => {
+            // Process children to replace citation patterns with chips
+            const processed = React.Children.map(children, (child) => {
+              if (typeof child === 'string') {
+                return <>{renderContentWithCitations(child)}</>;
+              }
+              return child;
+            });
+            return <p>{processed}</p>;
+          },
+          li: ({ children }) => {
+            const processed = React.Children.map(children, (child) => {
+              if (typeof child === 'string') {
+                return <>{renderContentWithCitations(child)}</>;
+              }
+              return child;
+            });
+            return <li>{processed}</li>;
+          },
+          td: ({ children }) => {
+            // Citations land in table cells too, and a chip is how they read
+            // everywhere else in the answer.
+            const processed = React.Children.map(children, (child) => {
+              if (typeof child === 'string') {
+                return <>{renderContentWithCitations(child)}</>;
+              }
+              return child;
+            });
+            return <td>{processed}</td>;
+          },
+          strong: ({ children }) => {
+            const processed = React.Children.map(children, (child) => {
+              if (typeof child === 'string') {
+                return <>{renderContentWithCitations(child)}</>;
+              }
+              return child;
+            });
+            return <strong>{processed}</strong>;
+          },
+        }}>
+        {content}
+      </ReactMarkdown>
+    </Box>
   );
 };
