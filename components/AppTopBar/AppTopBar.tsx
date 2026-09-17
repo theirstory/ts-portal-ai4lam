@@ -112,7 +112,22 @@ export const AppTopBar = () => {
                 )}
               </Box>
             </Link>
-            <Box sx={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <Box
+              sx={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: 3,
+                // The chip carries the whole row on desktop — nav, attribution
+                // and the collapse control — so they read as one control
+                // surface over the artwork instead of the last two floating
+                // loose beside it. Mobile keeps its own compact row untouched.
+                px: { xs: 0, md: 1.5 },
+                py: { xs: 0, md: 0.75 },
+                borderRadius: { xs: 0, md: '8px' },
+                backgroundColor: { xs: 'transparent', md: 'rgba(0, 0, 0, 0.22)' },
+                backdropFilter: { xs: 'none', md: 'blur(8px)' },
+                boxShadow: { xs: 'none', md: '0 6px 20px rgba(0,0,0,0.18)' },
+              }}>
               <Box
                 sx={{
                   display: { xs: 'flex', md: 'none' },
@@ -161,12 +176,6 @@ export const AppTopBar = () => {
                   display: { xs: 'none', md: 'flex' },
                   alignItems: 'center',
                   gap: 3,
-                  px: 1.5,
-                  py: 0.75,
-                  borderRadius: '8px',
-                  backgroundColor: 'rgba(0, 0, 0, 0.22)',
-                  backdropFilter: 'blur(8px)',
-                  boxShadow: '0 6px 20px rgba(0,0,0,0.18)',
                   '& a': {
                     color: config.theme.colors.primary.contrastText,
                     textDecoration: 'none',
