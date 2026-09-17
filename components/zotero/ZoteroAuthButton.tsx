@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useCallback, useState } from 'react';
-import { Button, Popover, Box, Typography, IconButton, Tooltip, CircularProgress } from '@mui/material';
+import { Button, Popover, Box, Typography, IconButton, MenuItem, Tooltip, CircularProgress } from '@mui/material';
 import LinkOffIcon from '@mui/icons-material/LinkOff';
 import { useZoteroStore } from '@/app/stores/useZoteroStore';
 import { colors } from '@/lib/theme';
@@ -9,14 +9,17 @@ import { ZoteroIcon } from './ZoteroIcon';
 
 interface Props {
   /**
-   * 'topBar' sits on the dark chip over the artwork; 'menu' sits inside the
-   * hamburger menu's white paper, where the top bar's white-on-translucent
-   * treatment would be invisible.
+   * 'topBar' sits on the dark chip over the artwork; 'menu' renders menu items
+   * for the hamburger menu, where the top bar's white-on-translucent treatment
+   * would be invisible and a button nested in a wrapper would sit outside the
+   * list's arrow-key navigation.
    */
   variant?: 'topBar' | 'menu';
+  /** Called after a menu action, so the menu can close behind it. */
+  onAction?: () => void;
 }
 
-export const ZoteroAuthButton = ({ variant = 'topBar' }: Props) => {
+export const ZoteroAuthButton = ({ variant = 'topBar', onAction }: Props) => {
   const isInMenu = variant === 'menu';
   const { isAuthenticated, username, isCheckingAuth, checkAuthStatus, logout } = useZoteroStore();
   const [anchorEl, setAnchorEl] = useState<HTMLElement | null>(null);
@@ -73,8 +76,53 @@ export const ZoteroAuthButton = ({ variant = 'topBar' }: Props) => {
     await logout();
   };
 
+  const menuIcon = (
+    <Box component="span" aria-hidden sx={{ display: 'inline-flex', mr: 1.5 }}>
+      <ZoteroIcon size={16} />
+    </Box>
+  );
+
+  // Menu items rather than a button in a wrapper: MUI's menu moves focus
+  // between the list's own children, so anything else is reachable by neither
+  // the arrow keys nor Tab, which the menu closes on.
+  if (isInMenu) {
+    if (isCheckingAuth) {
+      return <MenuItem disabled>{menuIcon}Checking Zotero…</MenuItem>;
+    }
+    if (!isAuthenticated) {
+      return (
+        <MenuItem
+          onClick={() => {
+            onAction?.();
+            void handleConnect();
+          }}>
+          {menuIcon}Connect Zotero
+        </MenuItem>
+      );
+    }
+    return (
+      <>
+        {/* The account it is connected to — information, not a control, so it
+            is skipped rather than being a menu item that does nothing. */}
+        <MenuItem disabled sx={{ '&.Mui-disabled': { opacity: 1, color: 'text.secondary' } }}>
+          {menuIcon}Zotero · {username || 'Connected'}
+        </MenuItem>
+        <MenuItem
+          onClick={() => {
+            onAction?.();
+            void logout();
+          }}>
+          <Box component="span" aria-hidden sx={{ display: 'inline-flex', mr: 1.5 }}>
+            <LinkOffIcon fontSize="small" />
+          </Box>
+          Disconnect Zotero
+        </MenuItem>
+      </>
+    );
+  }
+
   if (isCheckingAuth) {
-    return <CircularProgress size={16} sx={{ color: isInMenu ? 'text.secondary' : colors.primary.contrastText, mx: 1 }} />;
+    return <CircularProgress size={16} sx={{ color: colors.primary.contrastText, mx: 1 }} />;
   }
 
   if (!isAuthenticated) {
@@ -92,16 +140,12 @@ export const ZoteroAuthButton = ({ variant = 'topBar' }: Props) => {
           sx={{
             textTransform: 'none',
             fontSize: '0.75rem',
-            ...(isInMenu
-              ? { width: '100%', justifyContent: 'flex-start', color: 'text.primary', borderColor: 'divider' }
-              : {
-                  color: colors.primary.contrastText,
-                  borderColor: 'rgba(255,255,255,0.4)',
-                  '&:hover': {
-                    borderColor: colors.primary.contrastText,
-                    backgroundColor: 'rgba(255,255,255,0.08)',
-                  },
-                }),
+            color: colors.primary.contrastText,
+            borderColor: 'rgba(255,255,255,0.4)',
+            '&:hover': {
+              borderColor: colors.primary.contrastText,
+              backgroundColor: 'rgba(255,255,255,0.08)',
+            },
           }}>
           Connect Zotero
         </Button>
@@ -120,15 +164,13 @@ export const ZoteroAuthButton = ({ variant = 'topBar' }: Props) => {
             px: 1,
             gap: 0.5,
             fontSize: '0.75rem',
-            ...(isInMenu
-              ? { width: '100%', justifyContent: 'flex-start', color: 'text.primary', border: '1px solid', borderColor: 'divider' }
-              : { color: colors.primary.contrastText, border: '1px solid rgba(255,255,255,0.4)' }),
+            color: colors.primary.contrastText,
+            border: '1px solid rgba(255,255,255,0.4)',
           }}>
           <Box component="span" aria-hidden sx={{ display: 'inline-flex' }}>
             <ZoteroIcon size={16} />
           </Box>
-          {/* Always labelled: an icon alone says nothing about what it does,
-              and in the menu it sits among items that are all words. */}
+          {/* Always labelled: an icon alone says nothing about what it does. */}
           <Box component="span" sx={{ fontSize: '0.75rem' }}>
             {username || 'Zotero'}
           </Box>

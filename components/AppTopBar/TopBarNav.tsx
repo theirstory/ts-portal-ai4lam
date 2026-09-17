@@ -161,11 +161,9 @@ export const TopBarNav = ({
                 DISCOVER
               </MenuItem>
             )}
-            {isZoteroEnabled && (
-              <Box sx={{ px: 2, py: 1 }}>
-                <ZoteroAuthButton variant="menu" />
-              </Box>
-            )}
+            {/* Rendered straight into the list, not wrapped: the menu's
+                arrow-key navigation only walks its own children. */}
+            {isZoteroEnabled && <ZoteroAuthButton variant="menu" onAction={closeMenu} />}
             <Divider />
             <Box sx={{ px: 2, py: 1 }}>
               <Typography variant="caption" color="text.secondary">
