@@ -73,6 +73,11 @@ export const useRecordingsUrlState = () => {
   } = useSemanticSearchStore();
 
   const hydratedRef = useRef(false);
+  // The route this hook belongs to. Navigation away updates usePathname before
+  // this component unmounts, and without this the write below would rewrite
+  // the destination's URL with recordings params — cancelling the navigation
+  // and dropping the reader back here.
+  const ownPathnameRef = useRef(pathname);
 
   const runSearchFor = useCallback(
     (type: SearchType, entities: NerEntityFilter[]) => {
@@ -149,6 +154,12 @@ export const useRecordingsUrlState = () => {
   // --- write ------------------------------------------------------------
   useEffect(() => {
     if (!hydratedRef.current) return;
+    // Only ever manage the recordings URL. Clicking an excerpt pushes to the
+    // story page, which changes searchParams and re-runs this effect; without
+    // the guard it immediately replaced that URL with the recordings params,
+    // so the first click appeared to do nothing and landed back on an empty
+    // recordings list.
+    if (pathname !== ownPathnameRef.current) return;
 
     const params = new URLSearchParams();
     if (hasSearched && searchTerm.trim()) {
