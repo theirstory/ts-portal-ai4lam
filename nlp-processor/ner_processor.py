@@ -440,6 +440,43 @@ def locate_occurrences(
 
 # ------------------------------------------------------------------ entry
 
+def add_curated_labels(occurrences: List[Occurrence]) -> List[Occurrence]:
+    """Also file curated entities under their additional label(s).
+
+    Applied after locating rather than before, because locating claims each
+    word once to stop nested names double-counting — a second copy of the same
+    entity would find every span already taken and produce nothing.
+    """
+    if not Config.NER_ADDITIONAL_LABELS:
+        return occurrences
+
+    extras: List[Occurrence] = []
+    for text, extra_label in Config.NER_ADDITIONAL_LABELS:
+        wanted = text.strip().lower()
+        if not wanted or not extra_label:
+            continue
+        for occurrence in occurrences:
+            if occurrence.text.strip().lower() != wanted:
+                continue
+            if occurrence.label == extra_label:
+                continue
+            extras.append(
+                Occurrence(
+                    text=occurrence.text,
+                    label=extra_label,
+                    start_time=occurrence.start_time,
+                    end_time=occurrence.end_time,
+                    start_word=occurrence.start_word,
+                    end_word=occurrence.end_word,
+                )
+            )
+
+    if extras:
+        logger.info("[NER] Added %s curated dual-label occurrence(s)", len(extras))
+
+    return sorted(occurrences + extras, key=lambda occ: (occ.start_time, occ.start_word))
+
+
 def empty_ner_stats() -> Dict[str, int]:
     return {
         "windows_processed": 0,
@@ -512,7 +549,7 @@ def extract_entities(
     merged = merge_entities(batches, allowed_labels)
     stats["canonical_entities"] = len(merged)
 
-    occurrences = locate_occurrences(merged, words)
+    occurrences = add_curated_labels(locate_occurrences(merged, words))
     stats["entities_found"] = len(occurrences)
 
     return [occ.to_dict() for occ in occurrences], stats

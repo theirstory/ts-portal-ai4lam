@@ -51,6 +51,18 @@ class Config:
     # on long transcripts: low | medium | high | xhigh | max
     NER_EFFORT = os.getenv("NER_EFFORT", "").strip()
     MIN_TEXT_LENGTH_FOR_NER = int(os.getenv("MIN_TEXT_LENGTH_FOR_NER", "50"))
+    # Entities that genuinely belong to more than one category, as
+    # "text:label" pairs. The model assigns one label per entity, which is
+    # right for almost everything — but a company that is also the platform
+    # being discussed is findable under either, and a reader browsing
+    # Technology should not miss it. Curated rather than inferred, because
+    # deciding an entity belongs in two categories is an archive's judgement.
+    NER_ADDITIONAL_LABELS = [
+        (pair.split(":", 1)[0].strip(), pair.split(":", 1)[1].strip().lower())
+        for pair in os.getenv("NER_ADDITIONAL_LABELS", "TheirStory:technology").split(",")
+        if pair.strip() and ":" in pair
+    ]
+
     # Terms that must never be indexed as a browsable entity, whatever the
     # transcript says. Unlike NER_STOPLIST (which drops generic single words
     # like "web"), this matches a token anywhere in a surface form, so a
@@ -132,6 +144,7 @@ class Config:
         print(f"[Config] Min text length for NER: {cls.MIN_TEXT_LENGTH_FOR_NER}")
         print(f"[Config] NER stoplist terms: {len(cls.NER_STOPLIST)}")
         print(f"[Config] NER blocklist terms: {len(cls.NER_BLOCKLIST)}")
+        print(f"[Config] NER additional labels: {cls.NER_ADDITIONAL_LABELS}")
         print(f"[Config] Weaviate URL: {cls.WEAVIATE_URL}")
         print(f"[Config] Embedding model: {cls.EMBEDDING_MODEL}")
         print(f"[Config] Use GPU: {cls.USE_GPU}")
