@@ -6,7 +6,7 @@ import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import ChevronRightIcon from '@mui/icons-material/ChevronRight';
 import FilterAltOutlinedIcon from '@mui/icons-material/FilterAltOutlined';
 import ClearIcon from '@mui/icons-material/Clear';
-import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 import { Chunks } from '@/types/weaviate';
 import { colors } from '@/lib/theme';
@@ -121,7 +121,6 @@ interface Props {
  * are visible without a click, and collapse to let a reader skim recordings.
  */
 export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilterParam, emptyMessage }: Props) => {
-  const router = useRouter();
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   // Held in the store rather than locally so it survives in a shared URL.
   const resultsFilter = useSemanticSearchStore((state) => state.resultsFilterTerm);
@@ -265,14 +264,17 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
     );
   }
 
-  const openExcerpt = (recordingId: string, excerpt: ExcerptGroupingSource) => {
+  // A real link rather than a click handler on a div: an excerpt goes to a URL,
+  // so it belongs in the tab order, opens with Enter, and can be opened in a new
+  // tab — the same shape the recording cards already use.
+  const excerptHref = (recordingId: string, excerpt: ExcerptGroupingSource) => {
     const params = new URLSearchParams();
     if (typeof excerpt.start_time === 'number') params.set('start', String(excerpt.start_time));
     if (typeof excerpt.end_time === 'number') params.set('end', String(excerpt.end_time));
     if (nerFilterParam) params.set('nerFilters', nerFilterParam);
     // So the transcript can mark the same term the reader was filtering on.
     if (filterTerm) params.set('highlight', filterTerm);
-    router.push(`/story/${recordingId}?${params.toString()}`);
+    return `/story/${recordingId}?${params.toString()}`;
   };
 
   return (
@@ -288,14 +290,29 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
             // inside the group instead of letting it pin to the scroll box.
             sx={{ border: `1px solid ${colors.common.border}`, borderRadius: '8px' }}>
             <Box
+              component="button"
+              type="button"
               onClick={() => setCollapsed((current) => ({ ...current, [group.id]: !current[group.id] }))}
+              aria-expanded={!isCollapsed}
+              // The whole row is the control, so the recording's title is what a
+              // keyboard reader lands on and hears — rather than a bare chevron
+              // beside a title that was never reachable.
               sx={{
                 display: 'flex',
+                width: '100%',
+                textAlign: 'left',
+                font: 'inherit',
+                color: 'inherit',
+                border: 0,
                 alignItems: 'center',
                 gap: 1.5,
                 px: 1.5,
                 py: 1,
                 cursor: 'pointer',
+                '&:focus-visible': {
+                  outline: `2px solid ${colors.primary.main}`,
+                  outlineOffset: '-2px',
+                },
                 // Pins while its own excerpts are on screen, so a reader deep in
                 // a long list always knows which recording they are reading and
                 // can collapse it without scrolling back up. The next group's
@@ -310,17 +327,13 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                 borderBottom: `1px solid ${colors.common.border}`,
                 '&:hover': { bgcolor: 'action.hover' },
               }}>
-              <IconButton
-                size="small"
-                aria-label={`${isCollapsed ? 'Expand' : 'Collapse'} ${group.title}`}
-                aria-expanded={!isCollapsed}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  setCollapsed((current) => ({ ...current, [group.id]: !current[group.id] }));
-                }}
-                sx={{ p: 0.25 }}>
-                {isCollapsed ? <ChevronRightIcon fontSize="small" /> : <ExpandMoreIcon fontSize="small" />}
-              </IconButton>
+              {/* Decorative: the row itself carries the label and aria-expanded,
+                  and a nested button inside it would be invalid. */}
+              {isCollapsed ? (
+                <ChevronRightIcon fontSize="small" sx={{ flexShrink: 0 }} />
+              ) : (
+                <ExpandMoreIcon fontSize="small" sx={{ flexShrink: 0 }} />
+              )}
 
               {group.thumbnail && (
                 // eslint-disable-next-line @next/next/no-img-element
@@ -355,13 +368,21 @@ export const GroupedExcerptResults = ({ excerpts, highlightTerms = [], nerFilter
                   return (
                     <Box
                       key={`${group.id}-${excerpt.start_time ?? index}`}
-                      onClick={() => openExcerpt(group.id, excerpt)}
+                      component={Link}
+                      href={excerptHref(group.id, excerpt)}
                       sx={{
+                        display: 'block',
                         px: 2,
                         py: 1.5,
                         cursor: 'pointer',
+                        color: 'inherit',
+                        textDecoration: 'none',
                         borderTop: `1px solid ${colors.common.border}`,
                         '&:hover': { bgcolor: 'action.hover' },
+                        '&:focus-visible': {
+                          outline: `2px solid ${colors.primary.main}`,
+                          outlineOffset: '-2px',
+                        },
                       }}>
                       <Box sx={{ display: 'flex', gap: 1.5, alignItems: 'flex-start' }}>
                         {excerptThumbnail(group.videoUrl, excerpt.start_time as number | undefined)}
