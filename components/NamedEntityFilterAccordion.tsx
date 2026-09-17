@@ -78,27 +78,53 @@ export const NamedEntityFilterAccordion = ({ nerIds }: Props) => {
     [selectedNerEntities],
   );
 
+  // What the entity lists are currently describing. When this changes every
+  // label has to be asked again; while it holds, each label is asked once.
+  const entityLoadContext = [
+    searchTerm.trim(),
+    searchType,
+    minValue,
+    maxValue,
+    selectedCollectionIds.join(','),
+    selectedFolderIds.join(','),
+  ].join('|');
+  const requestedLabelsRef = useRef<{ context: string; labels: Set<string> }>({
+    context: entityLoadContext,
+    labels: new Set(),
+  });
+
   // Every label's entities are loaded when either search box is in play: the
   // entity box needs to reach labels that aren't open yet, and a transcript
   // search needs every label's count to describe the narrowed results rather
   // than the whole archive.
   useEffect(() => {
     if (!entityQuery && !searchTerm.trim()) return;
+
+    const tracker = requestedLabelsRef.current;
+    if (tracker.context !== entityLoadContext) {
+      tracker.context = entityLoadContext;
+      tracker.labels = new Set();
+    }
+
     nerIds.forEach((label) => {
-      const loaded = (nerEntityOptionsByLabel[label]?.length ?? 0) > 0;
-      if (!loaded && !nerEntityOptionsLoadingByLabel[label]) {
-        loadNerEntityOptions(label, false, minValue, maxValue);
-      }
+      // Tracked by "asked", not "has results". A label with no matching
+      // entities never reaches a non-empty list, so testing the list meant
+      // asking again on every render — and each request flipped its loading
+      // flag, re-running this effect, which asked again without end.
+      if (tracker.labels.has(label)) return;
+      if (nerEntityOptionsLoadingByLabel[label]) return;
+      tracker.labels.add(label);
+      loadNerEntityOptions(label, false, minValue, maxValue);
     });
   }, [
     entityQuery,
-    searchTerm,
+    entityLoadContext,
     loadNerEntityOptions,
     maxValue,
     minValue,
-    nerEntityOptionsByLabel,
     nerEntityOptionsLoadingByLabel,
     nerIds,
+    searchTerm,
   ]);
 
   const matchesByLabel = useMemo(() => {
