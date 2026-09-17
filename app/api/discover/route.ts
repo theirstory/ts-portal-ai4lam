@@ -3,9 +3,47 @@ import { ChatRequest, Citation, ZoteroContextItem } from '@/types/chat';
 import { createChatProvider, getChatProviderSettings } from '@/lib/ai/chatProvider';
 import { getZoteroSession } from '@/lib/zotero/cookies';
 import { searchUserLibrary } from '@/lib/zotero/client';
-import { isZoteroEnabled } from '@/config/organizationConfig';
+import { isZoteroEnabled, isChatAttachmentsEnabled } from '@/config/organizationConfig';
+import { getAttachment, StoredAttachment } from '@/lib/chat/attachmentStore';
 
-function buildSystemPrompt(allCitations: Citation[], responseLanguage: string, zoteroItems?: ZoteroContextItem[]): string {
+/**
+ * What the reader attached, as context the model can quote from.
+ *
+ * Marked as the reader's material rather than the archive's, and cited as [A1]
+ * rather than [1], so an answer never presents an uploaded document as if it
+ * were something an interviewee said.
+ */
+function buildAttachmentBlock(attachments: StoredAttachment[]): string {
+  const readable = attachments.filter((item) => item.text?.trim());
+  if (!readable.length) return '';
+
+  const entries = readable
+    .map((item, index) => {
+      const source = item.sourceUrl ? ` | Source: ${item.sourceUrl}` : '';
+      const cut = item.truncated ? ' | NOTE: this material was truncated to fit' : '';
+      return `[A${index + 1}] ${item.kind === 'webpage' ? 'Web page' : 'Document'}: "${item.name}"${source}${cut}\n${item.text}`;
+    })
+    .join('\n\n');
+
+  const images = attachments.filter((item) => item.kind === 'image');
+  const imageNote = images.length
+    ? `\nThe reader also attached ${images.length === 1 ? 'an image' : `${images.length} images`}, included with their message: ${images.map((item) => `"${item.name}"`).join(', ')}.`
+    : '';
+
+  return `
+
+MATERIAL THE READER ATTACHED:
+This was supplied by the reader, not drawn from the archive. Treat it as their material: use it to understand what they are asking and answer against the archive's sources. Cite it as [A1], [A2] when you refer to it, and never present it as something a speaker in the archive said.${imageNote}
+
+${entries}`;
+}
+
+function buildSystemPrompt(
+  allCitations: Citation[],
+  responseLanguage: string,
+  zoteroItems?: ZoteroContextItem[],
+  attachments: StoredAttachment[] = [],
+): string {
   const sourcesBlock = allCitations
     .map((c) => {
       if (c.isChapterSynopsis) {
@@ -42,7 +80,7 @@ RULES:
 - If you include a direct quote from a source, keep the quote in its original language, but keep your explanation in ${responseLanguage}.${zoteroItems?.length ? '\n- When referencing items from the researcher\'s Zotero library, cite them as [Z1], [Z2], etc. and note that these come from their personal library.' : ''}
 
 SOURCES:
-${sourcesBlock}${zoteroBlock}`;
+${sourcesBlock}${zoteroBlock}${buildAttachmentBlock(attachments)}`;
 }
 
 function formatTime(seconds: number): string {
@@ -62,7 +100,7 @@ function getUserFacingDiscoverError(err: unknown): string {
 export async function POST(request: Request) {
   try {
     const body = (await request.json()) as ChatRequest;
-    const { messages, query, responseLanguage, includeZoteroContext } = body;
+    const { messages, query, responseLanguage, includeZoteroContext, attachmentIds } = body;
 
     if (!query?.trim()) {
       return Response.json({ error: 'Query is required' }, { status: 400 });
@@ -128,7 +166,27 @@ export async function POST(request: Request) {
             index: i + 1,
           }));
 
-          const systemPrompt = buildSystemPrompt(allCitations, responseLanguage?.trim() || 'English', zoteroItems);
+          // Anything the reader attached that is still in memory. One that has
+          // expired is simply absent — the client is told, rather than the
+          // answer quietly being given without it.
+          const attachments = isChatAttachmentsEnabled
+            ? (attachmentIds ?? []).map((id) => getAttachment(id)).filter((item): item is StoredAttachment => !!item)
+            : [];
+          const missingAttachments = isChatAttachmentsEnabled
+            ? (attachmentIds ?? []).filter((id) => !getAttachment(id))
+            : [];
+          if (missingAttachments.length) {
+            controller.enqueue(
+              encoder.encode(sseEvent({ type: 'attachments_expired', ids: missingAttachments })),
+            );
+          }
+
+          const systemPrompt = buildSystemPrompt(
+            allCitations,
+            responseLanguage?.trim() || 'English',
+            zoteroItems,
+            attachments,
+          );
           const citations = allCitations;
 
           // Send citations to client
@@ -139,9 +197,17 @@ export async function POST(request: Request) {
 
           const providerSettings = getChatProviderSettings();
           const provider = createChatProvider(providerSettings);
-          const providerMessages = messages.map((m) => ({
+          const providerMessages = messages.map((m, index) => ({
             role: m.role as 'user' | 'assistant',
             content: m.content,
+            // Images ride with the last message, which is the question being
+            // asked about them.
+            images:
+              index === messages.length - 1
+                ? attachments
+                    .filter((item) => item.kind === 'image' && item.imageBase64 && item.mediaType)
+                    .map((item) => ({ base64: item.imageBase64 as string, mediaType: item.mediaType as string }))
+                : undefined,
           }));
 
           for await (const text of provider.streamText({

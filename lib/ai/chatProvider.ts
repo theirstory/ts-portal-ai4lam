@@ -3,9 +3,20 @@ import { config } from '@/config/organizationConfig';
 
 export type ChatProviderName = 'anthropic' | 'openai' | 'openai-compatible';
 
+/**
+ * Images a message carries. Text is passed as text; an image has to be handed
+ * to each provider in its own shape, which is the only reason a message is not
+ * simply a string.
+ */
+export type ChatProviderImage = {
+  base64: string;
+  mediaType: string;
+};
+
 export type ChatProviderMessage = {
   role: 'user' | 'assistant';
   content: string;
+  images?: ChatProviderImage[];
 };
 
 export type ChatProviderRequest = {
@@ -103,7 +114,25 @@ function createAnthropicProvider(settings: ChatProviderSettings): ChatProvider {
         model: input.model,
         max_tokens: input.maxTokens,
         system: input.systemPrompt,
-        messages: input.messages,
+        messages: input.messages.map((message) =>
+          message.images?.length
+            ? {
+                role: message.role,
+                content: [
+                  ...message.images.map((image) => ({
+                    type: 'image' as const,
+                    source: {
+                      type: 'base64' as const,
+                      media_type: image.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                      data: image.base64,
+                    },
+                  })),
+                  // After the images, so the question reads as being about them.
+                  { type: 'text' as const, text: message.content },
+                ],
+              }
+            : { role: message.role, content: message.content },
+        ),
       });
 
       for await (const event of stream) {
@@ -128,7 +157,23 @@ function createOpenAICompatibleProvider(settings: ChatProviderSettings): ChatPro
           model: input.model,
           stream: true,
           max_tokens: input.maxTokens,
-          messages: [{ role: 'system', content: input.systemPrompt }, ...input.messages],
+          messages: [
+            { role: 'system', content: input.systemPrompt },
+            ...input.messages.map((message) =>
+              message.images?.length
+                ? {
+                    role: message.role,
+                    content: [
+                      ...message.images.map((image) => ({
+                        type: 'image_url' as const,
+                        image_url: { url: `data:${image.mediaType};base64,${image.base64}` },
+                      })),
+                      { type: 'text' as const, text: message.content },
+                    ],
+                  }
+                : { role: message.role, content: message.content },
+            ),
+          ],
         }),
       });
 

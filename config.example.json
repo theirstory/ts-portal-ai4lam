@@ -115,6 +115,10 @@
       "model": "claude-sonnet-4-6",
       "baseUrl": ""
     },
+    "chatAttachments": {
+      "_comment": "Lets readers attach images, PDFs, Word documents and public links to a Discover chat, as context for the model. Extracted text is held in the server's memory for about two hours and then dropped \u2014 nothing is written to disk. Attachments are sent to whichever model features.chat names.",
+      "enabled": false
+    },
     "zotero": {
       "_comment": "Enable Zotero integration for saving interviews and transcript excerpts to users' Zotero libraries. Requires ZOTERO_CLIENT_KEY, ZOTERO_CLIENT_SECRET, and ZOTERO_COOKIE_SECRET env vars.",
       "enabled": false

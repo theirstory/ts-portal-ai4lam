@@ -106,6 +106,14 @@ export interface FeaturesConfig {
     enabled?: boolean;
   };
   /**
+   * Lets readers attach files and public links to a chat, as context for the
+   * model. Extracted text is held in the server's memory for the sitting and
+   * then dropped; nothing is written to disk.
+   */
+  chatAttachments?: {
+    enabled?: boolean;
+  };
+  /**
    * Lets readers propose corrections to anything the archive states — a
    * transcript line, an entity, a description, an index entry — and files each
    * one as a GitHub issue. Needs GITHUB_TOKEN in the server environment.
@@ -159,6 +167,7 @@ export const nerLabels = config.ner.labels;
 export const nerFallbackColors = config.ner.fallbackColors;
 export const isChatEnabled = config.features?.chat?.enabled ?? false;
 export const isZoteroEnabled = config.features?.zotero?.enabled ?? false;
+export const isChatAttachmentsEnabled = Boolean(config.features?.chatAttachments?.enabled && isChatEnabled);
 export const suggestionsConfig = config.features?.suggestions;
 // The repository is what makes the feature work at all, so a portal that
 // enabled it without naming one should not show controls that cannot file

@@ -8,6 +8,17 @@ export type ZoteroContextItem = {
   url: string;
 };
 
+/** What the browser knows about an attachment: never its extracted text. */
+export type ChatAttachment = {
+  id: string;
+  kind: 'document' | 'image' | 'webpage';
+  name: string;
+  sourceUrl?: string;
+  /** The document was longer than the context budget and was cut. */
+  truncated?: boolean;
+  bytes: number;
+};
+
 export type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
@@ -36,6 +47,8 @@ export type ChatRequest = {
   query: string;
   responseLanguage?: string;
   includeZoteroContext?: boolean;
+  /** Attachments the reader added, held server-side and referenced by id. */
+  attachmentIds?: string[];
 };
 
 export type ChatStreamChunk =
@@ -43,4 +56,5 @@ export type ChatStreamChunk =
   | { type: 'citations'; citations: Citation[] }
   | { type: 'text'; content: string }
   | { type: 'zotero_context'; items: ZoteroContextItem[] }
+  | { type: 'attachments_expired'; ids: string[] }
   | { type: 'done' };

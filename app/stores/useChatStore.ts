@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { devtools, persist } from 'zustand/middleware';
-import { ChatMessage, Citation, ChatStreamChunk } from '@/types/chat';
+import { ChatMessage, Citation, ChatStreamChunk, ChatAttachment } from '@/types/chat';
 import { config, isZoteroEnabled } from '@/config/organizationConfig';
 import { useZoteroStore } from './useZoteroStore';
 
@@ -29,8 +29,16 @@ type ChatStore = {
   scrollToCitationIndex: number | null;
   activeAssistantMessageId: string | null;
   pendingContext: string | null;
+  /** Files and links the reader attached, as context for every message that follows. */
+  attachments: ChatAttachment[];
+  attachmentError: string | null;
+  isAttaching: boolean;
 
   sendMessage: (content: string) => Promise<void>;
+  addAttachmentFile: (file: File) => Promise<void>;
+  addAttachmentUrl: (url: string) => Promise<void>;
+  removeAttachment: (id: string) => void;
+  setAttachmentError: (message: string | null) => void;
   stopStreaming: () => void;
   setSelectedLanguage: (language: string) => void;
   setActiveCitation: (citation: Citation, siblings?: Citation[]) => void;
@@ -71,6 +79,9 @@ export const useChatStore = create<ChatStore>()(
         messages: [],
         isStreaming: false,
         streamingStatus: null,
+        attachments: [],
+        attachmentError: null,
+        isAttaching: false,
         selectedLanguage: 'English',
         activeRequestController: null,
         sidePanelMode: 'hidden',
@@ -130,6 +141,7 @@ export const useChatStore = create<ChatStore>()(
                 query: content,
                 responseLanguage: get().selectedLanguage,
                 includeZoteroContext: isZoteroEnabled && useZoteroStore.getState().isAuthenticated,
+                attachmentIds: get().attachments.map((attachment) => attachment.id),
               }),
             });
 
@@ -231,6 +243,19 @@ export const useChatStore = create<ChatStore>()(
                       },
                       false,
                       'sendMessage:zotero_context',
+                    );
+                  } else if (chunk.type === 'attachments_expired') {
+                    // The server restarted, or two hours passed. Say so rather
+                    // than letting the answer look like it read them.
+                    const expired = new Set(chunk.ids);
+                    set(
+                      (state) => ({
+                        attachments: state.attachments.filter((item) => !expired.has(item.id)),
+                        attachmentError:
+                          'Some attachments are no longer available and were not used. Please add them again.',
+                      }),
+                      false,
+                      'sendMessage:attachments_expired',
                     );
                   } else if (chunk.type === 'text') {
                     pendingAssistantText += chunk.content;
@@ -461,10 +486,73 @@ export const useChatStore = create<ChatStore>()(
             'selectSearchResult',
           ),
 
+        setAttachmentError: (attachmentError) => set({ attachmentError }, false, 'setAttachmentError'),
+
+        addAttachmentFile: async (file: File) => {
+          set({ isAttaching: true, attachmentError: null }, false, 'addAttachmentFile:start');
+          try {
+            const form = new FormData();
+            form.append('file', file);
+            const response = await fetch('/api/discover/attachments', { method: 'POST', body: form });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              set({ attachmentError: data?.error || 'That file could not be read.' }, false, 'addAttachmentFile:error');
+              return;
+            }
+            set(
+              (state) => ({ attachments: [...state.attachments, data as ChatAttachment] }),
+              false,
+              'addAttachmentFile:done',
+            );
+          } catch {
+            set({ attachmentError: 'That file could not be sent.' }, false, 'addAttachmentFile:error');
+          } finally {
+            set({ isAttaching: false }, false, 'addAttachmentFile:end');
+          }
+        },
+
+        addAttachmentUrl: async (url: string) => {
+          set({ isAttaching: true, attachmentError: null }, false, 'addAttachmentUrl:start');
+          try {
+            const response = await fetch('/api/discover/attachments', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ url }),
+            });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) {
+              set({ attachmentError: data?.error || 'That link could not be read.' }, false, 'addAttachmentUrl:error');
+              return;
+            }
+            set(
+              (state) => ({ attachments: [...state.attachments, data as ChatAttachment] }),
+              false,
+              'addAttachmentUrl:done',
+            );
+          } catch {
+            set({ attachmentError: 'That link could not be read.' }, false, 'addAttachmentUrl:error');
+          } finally {
+            set({ isAttaching: false }, false, 'addAttachmentUrl:end');
+          }
+        },
+
+        removeAttachment: (id: string) => {
+          set(
+            (state) => ({ attachments: state.attachments.filter((item) => item.id !== id) }),
+            false,
+            'removeAttachment',
+          );
+          // Drops it from the server's memory now rather than waiting for the
+          // two hours to run out.
+          void fetch(`/api/discover/attachments?id=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => {});
+        },
+
         clearMessages: () =>
           set(
             {
               messages: [],
+              attachments: [],
+              attachmentError: null,
               isStreaming: false,
               streamingStatus: null,
               activeRequestController: null,

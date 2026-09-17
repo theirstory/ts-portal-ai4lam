@@ -11,6 +11,7 @@ import { ChatMessage as ChatMessageType } from '@/types/chat';
 import { ChatMessage } from './ChatMessage';
 import { TextSelectionPopover } from './TextSelectionPopover';
 import { type ChatLanguage, LanguageSelector, VoiceInputButton, VoiceRecordingComposer } from './ChatComposerControls';
+import { ChatAttachmentBar } from './ChatAttachmentBar';
 import { useVoiceRecorder } from './useVoiceRecorder';
 import { colors } from '@/lib/theme';
 
@@ -459,7 +460,7 @@ export function ChatComposer({
     ? voiceRecorder.errorMessage
     : isStreaming
       ? 'Voice input is unavailable while the chat is responding'
-      : voiceRecorder.unavailableReason ?? undefined;
+      : (voiceRecorder.unavailableReason ?? undefined);
 
   if (voiceRecorder.isRecording) {
     return (
@@ -473,136 +474,143 @@ export function ChatComposer({
   }
 
   return (
-    <Box
-      id={compact ? 'chat-composer-compact' : fullHeight ? 'chat-composer-empty' : 'chat-composer'}
-      component="form"
-      onSubmit={onSubmit}
-      sx={{
-        display: 'flex',
-        gap: 1,
-        px: compact ? 1 : 0,
-        py: compact ? 1 : 2,
-        alignItems: compact ? 'center' : 'flex-end',
-        flexShrink: 0,
-      }}>
-      <TextField
-        id={compact ? 'chat-composer-input-compact' : fullHeight ? 'chat-composer-input-empty' : 'chat-composer-input'}
-        inputRef={inputRef}
-        fullWidth
-        multiline
-        maxRows={compact ? 4 : 6}
-        minRows={fullHeight ? 3 : undefined}
-        value={input}
-        onChange={(e) => onInputChange(e.target.value)}
-        onKeyDown={onKeyDown}
-        placeholder={placeholder}
-        variant="outlined"
-        size={compact ? 'small' : 'medium'}
-        disabled={isStreaming}
-        slotProps={
-          fullHeight
-            ? {
-                input: {
-                  endAdornment: (
-                    <InputAdornment
-                      position="end"
-                      sx={{
-                        alignSelf: 'flex-end',
-                        mr: 0.5,
-                        mb: 0.5,
-                        pointerEvents: 'auto',
-                        position: 'relative',
-                        zIndex: 2,
-                      }}>
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pointerEvents: 'auto' }}>
-                        <LanguageSelector selectedLanguage={selectedLanguage} onLanguageChange={onLanguageChange} />
-                        <VoiceInputButton
-                          disabled={!voiceRecorder.isSupported || isStreaming}
-                          disabledReason={voiceInputTooltip}
-                          isRecording={voiceRecorder.isRecording}
-                          isSupported={voiceRecorder.isSupported}
-                          onClick={voiceRecorder.startRecording}
-                        />
-                        <IconButton
-                          type={isStreaming ? 'button' : 'submit'}
-                          onClick={isStreaming ? onStop : undefined}
-                          disabled={isStreaming ? !onStop : !input.trim()}
-                          sx={{
-                            bgcolor: isStreaming ? colors.error.main : colors.primary.main,
-                            color: colors.primary.contrastText,
-                            '&:hover': { bgcolor: isStreaming ? colors.error.main : colors.primary.dark },
-                            '&.Mui-disabled': { bgcolor: colors.grey[300] },
-                            borderRadius: '50%',
-                            width: 44,
-                            height: 44,
-                          }}>
-                          {isStreaming ? <StopIcon sx={{ fontSize: 18 }} /> : <SendIcon sx={{ fontSize: 18 }} />}
-                        </IconButton>
-                      </Box>
-                    </InputAdornment>
-                  ),
-                },
-              }
-            : undefined
-        }
+    <>
+      {/* Above the field rather than inside it: what is attached is part of the
+          question being asked, and has to stay visible while it is typed. */}
+      <ChatAttachmentBar compact={compact} />
+      <Box
+        id={compact ? 'chat-composer-compact' : fullHeight ? 'chat-composer-empty' : 'chat-composer'}
+        component="form"
+        onSubmit={onSubmit}
         sx={{
-          '& .MuiOutlinedInput-root': {
-            bgcolor: colors.background.paper,
-            alignItems: fullHeight ? 'flex-end' : undefined,
-            fontSize: fullHeight ? '1rem' : undefined,
-            boxShadow: compact ? `0 1px 2px ${colors.common.shadow}` : 'none',
-            minHeight: compact ? 52 : undefined,
-            borderRadius: fullHeight ? 4 : compact ? 3 : undefined,
-            '& fieldset': {
-              borderColor: fullHeight || compact ? colors.grey[300] : undefined,
+          display: 'flex',
+          gap: 1,
+          px: compact ? 1 : 0,
+          py: compact ? 1 : 2,
+          alignItems: compact ? 'center' : 'flex-end',
+          flexShrink: 0,
+        }}>
+        <TextField
+          id={
+            compact ? 'chat-composer-input-compact' : fullHeight ? 'chat-composer-input-empty' : 'chat-composer-input'
+          }
+          inputRef={inputRef}
+          fullWidth
+          multiline
+          maxRows={compact ? 4 : 6}
+          minRows={fullHeight ? 3 : undefined}
+          value={input}
+          onChange={(e) => onInputChange(e.target.value)}
+          onKeyDown={onKeyDown}
+          placeholder={placeholder}
+          variant="outlined"
+          size={compact ? 'small' : 'medium'}
+          disabled={isStreaming}
+          slotProps={
+            fullHeight
+              ? {
+                  input: {
+                    endAdornment: (
+                      <InputAdornment
+                        position="end"
+                        sx={{
+                          alignSelf: 'flex-end',
+                          mr: 0.5,
+                          mb: 0.5,
+                          pointerEvents: 'auto',
+                          position: 'relative',
+                          zIndex: 2,
+                        }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5, pointerEvents: 'auto' }}>
+                          <LanguageSelector selectedLanguage={selectedLanguage} onLanguageChange={onLanguageChange} />
+                          <VoiceInputButton
+                            disabled={!voiceRecorder.isSupported || isStreaming}
+                            disabledReason={voiceInputTooltip}
+                            isRecording={voiceRecorder.isRecording}
+                            isSupported={voiceRecorder.isSupported}
+                            onClick={voiceRecorder.startRecording}
+                          />
+                          <IconButton
+                            type={isStreaming ? 'button' : 'submit'}
+                            onClick={isStreaming ? onStop : undefined}
+                            disabled={isStreaming ? !onStop : !input.trim()}
+                            sx={{
+                              bgcolor: isStreaming ? colors.error.main : colors.primary.main,
+                              color: colors.primary.contrastText,
+                              '&:hover': { bgcolor: isStreaming ? colors.error.main : colors.primary.dark },
+                              '&.Mui-disabled': { bgcolor: colors.grey[300] },
+                              borderRadius: '50%',
+                              width: 44,
+                              height: 44,
+                            }}>
+                            {isStreaming ? <StopIcon sx={{ fontSize: 18 }} /> : <SendIcon sx={{ fontSize: 18 }} />}
+                          </IconButton>
+                        </Box>
+                      </InputAdornment>
+                    ),
+                  },
+                }
+              : undefined
+          }
+          sx={{
+            '& .MuiOutlinedInput-root': {
+              bgcolor: colors.background.paper,
+              alignItems: fullHeight ? 'flex-end' : undefined,
+              fontSize: fullHeight ? '1rem' : undefined,
+              boxShadow: compact ? `0 1px 2px ${colors.common.shadow}` : 'none',
+              minHeight: compact ? 52 : undefined,
+              borderRadius: fullHeight ? 4 : compact ? 3 : undefined,
+              '& fieldset': {
+                borderColor: fullHeight || compact ? colors.grey[300] : undefined,
+              },
+              '&:hover fieldset': {
+                borderColor: fullHeight || compact ? colors.grey[400] : undefined,
+              },
+              '&.Mui-focused fieldset': {
+                borderColor: fullHeight || compact ? colors.primary.light : undefined,
+              },
             },
-            '&:hover fieldset': {
-              borderColor: fullHeight || compact ? colors.grey[400] : undefined,
+            '& .MuiInputAdornment-root': {
+              pointerEvents: 'auto',
             },
-            '&.Mui-focused fieldset': {
-              borderColor: fullHeight || compact ? colors.primary.light : undefined,
-            },
-          },
-          '& .MuiInputAdornment-root': {
-            pointerEvents: 'auto',
-          },
-        }}
-      />
-      {!fullHeight && (
-        <>
-          <LanguageSelector
-            selectedLanguage={selectedLanguage}
-            onLanguageChange={onLanguageChange}
-            compact={compact}
-          />
-          <VoiceInputButton
-            compact={compact}
-            disabled={!voiceRecorder.isSupported || isStreaming}
-            disabledReason={voiceInputTooltip}
-            isRecording={voiceRecorder.isRecording}
-            isSupported={voiceRecorder.isSupported}
-            onClick={voiceRecorder.startRecording}
-          />
-          <IconButton
-            id={compact ? 'chat-composer-submit-compact' : 'chat-composer-submit'}
-            type={isStreaming ? 'button' : 'submit'}
-            onClick={isStreaming ? onStop : undefined}
-            disabled={isStreaming ? !onStop : !input.trim()}
-            sx={{
-              bgcolor: isStreaming ? colors.error.main : colors.primary.main,
-              color: colors.primary.contrastText,
-              '&:hover': { bgcolor: isStreaming ? colors.error.main : colors.primary.dark },
-              '&.Mui-disabled': { bgcolor: colors.grey[300] },
-              borderRadius: '50%',
-              alignSelf: 'center',
-              mt: compact ? -0.25 : 0,
-              width: compact ? 36 : 40,
-              height: compact ? 36 : 40,
-            }}>
-            {isStreaming ? <StopIcon fontSize="small" /> : <SendIcon fontSize="small" />}
-          </IconButton>
-        </>
-      )}
-    </Box>
+          }}
+        />
+        {!fullHeight && (
+          <>
+            <LanguageSelector
+              selectedLanguage={selectedLanguage}
+              onLanguageChange={onLanguageChange}
+              compact={compact}
+            />
+            <VoiceInputButton
+              compact={compact}
+              disabled={!voiceRecorder.isSupported || isStreaming}
+              disabledReason={voiceInputTooltip}
+              isRecording={voiceRecorder.isRecording}
+              isSupported={voiceRecorder.isSupported}
+              onClick={voiceRecorder.startRecording}
+            />
+            <IconButton
+              id={compact ? 'chat-composer-submit-compact' : 'chat-composer-submit'}
+              type={isStreaming ? 'button' : 'submit'}
+              onClick={isStreaming ? onStop : undefined}
+              disabled={isStreaming ? !onStop : !input.trim()}
+              sx={{
+                bgcolor: isStreaming ? colors.error.main : colors.primary.main,
+                color: colors.primary.contrastText,
+                '&:hover': { bgcolor: isStreaming ? colors.error.main : colors.primary.dark },
+                '&.Mui-disabled': { bgcolor: colors.grey[300] },
+                borderRadius: '50%',
+                alignSelf: 'center',
+                mt: compact ? -0.25 : 0,
+                width: compact ? 36 : 40,
+                height: compact ? 36 : 40,
+              }}>
+              {isStreaming ? <StopIcon fontSize="small" /> : <SendIcon fontSize="small" />}
+            </IconButton>
+          </>
+        )}
+      </Box>
+    </>
   );
 }

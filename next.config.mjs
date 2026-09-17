@@ -1,5 +1,9 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Left as ordinary Node requires rather than bundled: pdf.js loads its worker
+  // by importing a sibling file at runtime, which a bundled copy cannot find,
+  // and mammoth reaches for its own resources the same way.
+  serverExternalPackages: ['pdfjs-dist', 'mammoth'],
   images: {
     remotePatterns: [
       {
