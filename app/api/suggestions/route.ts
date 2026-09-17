@@ -104,7 +104,7 @@ export async function POST(request: NextRequest) {
   const body = [
     `A reader of **${organizationConfig.displayName}** suggested a correction.`,
     '',
-    '### What they say should change',
+    '### Suggested change',
     '',
     quote(comment),
     ...(quotedText ? ['', '### The text as it stands', '', quote(quotedText)] : []),
