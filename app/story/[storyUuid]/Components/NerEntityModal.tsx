@@ -27,6 +27,7 @@ import { searchNerEntitiesAcrossCollection } from '@/lib/weaviate/search';
 import { WeaviateGenericObject } from 'weaviate-client';
 import { Chunks } from '@/types/weaviate';
 import { colors } from '@/lib/theme';
+import { SuggestCorrectionButton } from '@/components/suggestions/SuggestCorrectionButton';
 import { Word } from '@/types/transcription';
 import { useTranscriptNavigation } from '@/app/hooks/useTranscriptNavigation';
 import { formatTime } from '@/app/utils/util';
@@ -495,16 +496,31 @@ export const NerEntityModal: React.FC<NerEntityModalProps> = ({
           </Typography>
         </Box>
 
-        <IconButton
-          aria-label="close"
-          onClick={onClose}
-          sx={{
-            color: colors.grey[500],
-            ml: 1,
-            flexShrink: 0,
-          }}>
-          <CloseIcon />
-        </IconButton>
+        <Box sx={{ display: 'flex', alignItems: 'center', flexShrink: 0, ml: 1 }}>
+          {/* Wrong label, wrong span, a name the transcription mangled — this
+              is where a reader is looking at the claim, so it is where they
+              can dispute it. */}
+          <SuggestCorrectionButton
+            context={{
+              kind: 'entity',
+              entityText,
+              entityLabel,
+              quotedText: entityText,
+              recordingId: currentStoryUuid,
+              recordingTitle: storyHubPage?.properties?.interview_title as string | undefined,
+            }}
+            label="Suggest a correction to this entity"
+          />
+          <IconButton
+            aria-label="close"
+            onClick={onClose}
+            sx={{
+              color: colors.grey[500],
+              flexShrink: 0,
+            }}>
+            <CloseIcon />
+          </IconButton>
+        </Box>
       </DialogTitle>
 
       <DialogContent

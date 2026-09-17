@@ -105,6 +105,18 @@ export interface FeaturesConfig {
   zotero?: {
     enabled?: boolean;
   };
+  /**
+   * Lets readers propose corrections to anything the archive states — a
+   * transcript line, an entity, a description, an index entry — and files each
+   * one as a GitHub issue. Needs GITHUB_TOKEN in the server environment.
+   */
+  suggestions?: {
+    enabled?: boolean;
+    /** "owner/name" of the repository issues are filed in. */
+    repository?: string;
+    /** Applied to every issue this creates, so they can be triaged as a group. */
+    labels?: string[];
+  };
 }
 
 export interface AppConfig {
@@ -147,6 +159,13 @@ export const nerLabels = config.ner.labels;
 export const nerFallbackColors = config.ner.fallbackColors;
 export const isChatEnabled = config.features?.chat?.enabled ?? false;
 export const isZoteroEnabled = config.features?.zotero?.enabled ?? false;
+export const suggestionsConfig = config.features?.suggestions;
+// The repository is what makes the feature work at all, so a portal that
+// enabled it without naming one should not show controls that cannot file
+// anything.
+export const isSuggestionsEnabled = Boolean(
+  suggestionsConfig?.enabled && suggestionsConfig?.repository?.trim(),
+);
 export const externalNavLinks = (config.ui?.externalNavLinks ?? []).filter(
   (link) => link?.label?.trim() && link?.href?.trim(),
 );

@@ -4,6 +4,7 @@ import React from 'react';
 import { Box } from '@mui/material';
 import { usePathname, useSearchParams } from 'next/navigation';
 import { colors } from '@/lib/theme';
+import { SuggestionDialog } from '@/components/suggestions/SuggestionDialog';
 
 export const MainContainer = ({ children }: { children: React.ReactNode }) => {
   const pathname = usePathname();
@@ -23,6 +24,9 @@ export const MainContainer = ({ children }: { children: React.ReactNode }) => {
         flexDirection: 'column',
       }}>
       {children}
+      {/* Mounted once: corrections are raised from pages all over the portal,
+          and all of them open this same dialog through the store. */}
+      {!isEmbed && <SuggestionDialog />}
     </Box>
   );
 };

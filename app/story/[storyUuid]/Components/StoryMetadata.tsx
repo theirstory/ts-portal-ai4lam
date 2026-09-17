@@ -8,6 +8,7 @@ import { colors } from '@/lib/theme';
 import { formatStoryDate } from '@/app/utils/util';
 import { isZoteroEnabled } from '@/config/organizationConfig';
 import { ZoteroSaveInterviewButton } from '@/components/zotero/ZoteroSaveInterviewButton';
+import { SuggestCorrectionButton } from '@/components/suggestions/SuggestCorrectionButton';
 
 interface StoryMetadataProps {
   isMobile?: boolean;
@@ -19,6 +20,11 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
 
   const { interview_title, interview_description, recording_date, publisher, participants } =
     storyHubPage?.properties || {};
+  const suggestionContext = {
+    kind: 'metadata' as const,
+    recordingId: storyHubPage?.uuid,
+    recordingTitle: interview_title as string | undefined,
+  };
   const formattedRecordingDate = formatStoryDate(recording_date);
 
   const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
@@ -43,9 +49,15 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
             gap: 1.5,
           }}>
           {interview_title && (
-            <Typography variant="subtitle1" fontWeight="bold" color="primary" sx={{ lineHeight: 1.3 }}>
-              {interview_title}
-            </Typography>
+            <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
+              <Typography variant="subtitle1" fontWeight="bold" color="primary" sx={{ lineHeight: 1.3 }}>
+                {interview_title}
+              </Typography>
+              <SuggestCorrectionButton
+                context={{ ...suggestionContext, field: 'Recording metadata' }}
+                label="Suggest a correction to this recording's details"
+              />
+            </Box>
           )}
 
           <Typography variant="caption" color="text.secondary">
@@ -132,10 +144,16 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
               gap: 1,
             }}>
             {interview_title && (
-              <Box display="flex" justifyContent="space-between" alignItems="center">
+              <Box display="flex" justifyContent="space-between" alignItems="center" gap={1}>
                 <Typography variant="h6" fontWeight="bold" color="primary">
                   {interview_title}
                 </Typography>
+                {/* Covers the whole panel: a reader who spots a wrong date,
+                    participant or summary raises it from here and says which. */}
+                <SuggestCorrectionButton
+                  context={{ ...suggestionContext, field: 'Recording metadata' }}
+                  label="Suggest a correction to this recording's details"
+                />
               </Box>
             )}
 
@@ -162,9 +180,19 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
               )}
             </Box>
             <Box>
-              <Typography variant="subtitle2" fontWeight="bold" gutterBottom color="primary">
-                Summary
-              </Typography>
+              <Box display="flex" alignItems="center" justifyContent="space-between" gap={1}>
+                <Typography variant="subtitle2" fontWeight="bold" gutterBottom color="primary">
+                  Summary
+                </Typography>
+                <SuggestCorrectionButton
+                  context={{
+                    ...suggestionContext,
+                    field: 'Summary',
+                    quotedText: interview_description?.trim() || undefined,
+                  }}
+                  label="Suggest a correction to this summary"
+                />
+              </Box>
               <Typography variant="body2" color="text.secondary">
                 {interview_description?.trim() ? interview_description : 'No summary available'}
               </Typography>

@@ -47,6 +47,36 @@ DEBUG=true
 SITE_PASSWORD=your_secure_password
 ```
 
+### Suggested Corrections
+
+Readers can propose corrections to transcripts, named entities, descriptions
+and index entries. Each suggestion is filed as a GitHub issue.
+
+```bash
+# Fine-grained personal access token with "Issues: read and write" on the
+# repository named in config.json under features.suggestions.repository.
+# Create one at https://github.com/settings/personal-access-tokens
+GITHUB_TOKEN=github_pat_...
+```
+
+Turn the feature on in `config.json`:
+
+```json
+"features": {
+  "suggestions": {
+    "enabled": true,
+    "repository": "owner/repo",
+    "labels": ["correction", "from-portal"]
+  }
+}
+```
+
+The token stays on the server — it is read only inside the API route, never
+sent to the browser. Without it the controls still appear but submitting
+returns a "not configured" error, so set it wherever the portal runs
+(`.env.local` locally, `.env.production` on a deployed host). Any labels listed
+must already exist in the repository.
+
 ## NLP Processor Environment (`nlp-processor/.env.local`)
 
 Located in `nlp-processor/` directory.

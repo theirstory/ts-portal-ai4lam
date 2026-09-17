@@ -118,6 +118,15 @@
     "zotero": {
       "_comment": "Enable Zotero integration for saving interviews and transcript excerpts to users' Zotero libraries. Requires ZOTERO_CLIENT_KEY, ZOTERO_CLIENT_SECRET, and ZOTERO_COOKIE_SECRET env vars.",
       "enabled": false
+    },
+    "suggestions": {
+      "_comment": "Lets readers suggest corrections to transcripts, entities, descriptions and indexes. Each suggestion is filed as an issue in the repository below, which requires GITHUB_TOKEN in the server environment (a fine-grained token with Issues: read and write on that repository).",
+      "enabled": false,
+      "repository": "",
+      "labels": [
+        "correction",
+        "from-portal"
+      ]
     }
   },
   "ner": {

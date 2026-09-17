@@ -3,9 +3,12 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { Button, Paper } from '@mui/material';
 import AutoAwesomeIcon from '@mui/icons-material/AutoAwesome';
-import { isZoteroEnabled, isChatEnabled } from '@/config/organizationConfig';
+import EditNoteIcon from '@mui/icons-material/EditNote';
+import { isZoteroEnabled, isChatEnabled, isSuggestionsEnabled } from '@/config/organizationConfig';
 import { useZoteroStore } from '@/app/stores/useZoteroStore';
 import { ZoteroIcon } from '@/components/zotero/ZoteroIcon';
+import { useSuggestionStore } from '@/app/stores/useSuggestionStore';
+import { useSemanticSearchStore } from '@/app/stores/useSemanticSearchStore';
 
 type Props = {
   containerRef: React.RefObject<HTMLDivElement | null>;
@@ -45,6 +48,8 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
   const popoverRef = useRef<HTMLDivElement>(null);
   const isAuthenticated = useZoteroStore((s) => s.isAuthenticated);
   const showZotero = isZoteroEnabled && isAuthenticated;
+  const openSuggestion = useSuggestionStore((state) => state.openSuggestion);
+  const storyHubPage = useSemanticSearchStore((state) => state.storyHubPage);
 
   const dismiss = () => {
     setPosition(null);
@@ -111,11 +116,29 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
     dismiss();
   };
 
+  // Selecting the words that are wrong is the whole description of a
+  // transcript error, so the correction starts from the same selection the
+  // other actions use.
+  const handleSuggest = () => {
+    if (!selectedText) return;
+    openSuggestion({
+      kind: 'transcript',
+      quotedText: selectedText,
+      recordingId: storyHubPage?.uuid,
+      recordingTitle: storyHubPage?.properties?.interview_title as string | undefined,
+      startTime: timeRange?.startTime,
+      endTime: timeRange?.endTime,
+    });
+    dismiss();
+    window.getSelection()?.removeAllRanges();
+  };
+
   const showAskAI = isChatEnabled;
   const showZoteroButton = showZotero && timeRange;
+  const showSuggest = isSuggestionsEnabled;
 
   if (!position || !selectedText) return null;
-  if (!showAskAI && !showZoteroButton) return null;
+  if (!showAskAI && !showZoteroButton && !showSuggest) return null;
 
   return (
     <Paper
@@ -144,7 +167,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
             fontSize: '0.8rem',
             whiteSpace: 'nowrap',
             borderRadius: 0,
-            borderRight: showZoteroButton ? '1px solid' : 'none',
+            borderRight: showZoteroButton || showSuggest ? '1px solid' : 'none',
             borderColor: 'divider',
           }}>
           Ask AI
@@ -162,8 +185,26 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
             fontSize: '0.8rem',
             whiteSpace: 'nowrap',
             borderRadius: 0,
+            borderRight: showSuggest ? '1px solid' : 'none',
+            borderColor: 'divider',
           }}>
           Zotero
+        </Button>
+      )}
+      {showSuggest && (
+        <Button
+          size="small"
+          startIcon={<EditNoteIcon sx={{ fontSize: 16 }} />}
+          onClick={handleSuggest}
+          sx={{
+            textTransform: 'none',
+            px: 1.5,
+            py: 0.75,
+            fontSize: '0.8rem',
+            whiteSpace: 'nowrap',
+            borderRadius: 0,
+          }}>
+          Suggest a correction
         </Button>
       )}
     </Paper>
