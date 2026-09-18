@@ -9,6 +9,7 @@ import { ChatMessage as ChatMessageType } from '@/types/chat';
 import { ChatMessageContent } from './ChatMessageContent';
 import { useChatInteraction } from '@/app/discover/ChatInteractionContext';
 import { colors } from '@/lib/theme';
+import { buildCitationList } from '@/lib/citation';
 
 type Props = {
   message: ChatMessageType;
@@ -20,32 +21,21 @@ export const ChatMessage = memo(({ message }: Props) => {
   const { onViewSources } = useChatInteraction();
   const hasSources = !isUser && message.citations && message.citations.length > 0;
 
-  const formatTimeChicago = (seconds: number): string => {
-    const m = Math.floor(seconds / 60);
-    const s = Math.floor(seconds % 60);
-    return `${m}:${s.toString().padStart(2, '0')}`;
-  };
-
   const handleCopy = async () => {
     let text = message.content;
 
     if (message.citations?.length) {
+      // Only what the answer actually cited, in the order the markers appear.
       const citationIndices = Array.from(
         new Set(Array.from(text.matchAll(/\[(\d+)\]/g)).map((m) => parseInt(m[1], 10))),
       ).sort((a, b) => a - b);
 
       if (citationIndices.length > 0) {
-        const footnotes = citationIndices
-          .map((idx) => {
-            const c = message.citations!.find((c) => c.index === idx);
-            if (!c) return null;
-            return `${idx}. ${c.speaker}, "${c.interviewTitle}," ${c.sectionTitle}, ${formatTimeChicago(c.startTime)}–${formatTimeChicago(c.endTime)}.`;
-          })
-          .filter(Boolean)
-          .join('\n');
-
+        // Chicago notes carrying a link to the moment quoted, so a passage
+        // pasted into a document can be followed back to the recording.
+        const footnotes = buildCitationList(message.citations, citationIndices);
         if (footnotes) {
-          text = `${text}\n\n---\nSources:\n${footnotes}`;
+          text = `${text}\n\nSources\n\n${footnotes}`;
         }
       }
     }

@@ -130,20 +130,17 @@ export default function AiTransparencyPage() {
           and the results are stored on this server.
         </Paragraph>
         <Paragraph>
-          All three services are used under terms that say the material sent to them is not used to train their models
-          and is not kept on their servers long term. Their own policies are the authoritative statement of that —{' '}
-          <MuiLink href="https://www.speechmatics.com/legal" target="_blank" rel="noopener noreferrer">
-            Speechmatics
-          </MuiLink>
-          ,{' '}
+          None of this material is used to train these providers&apos; models, and none of it is kept on their servers
+          long term.{' '}
           <MuiLink href="https://openai.com/policies" target="_blank" rel="noopener noreferrer">
             OpenAI
           </MuiLink>{' '}
           and{' '}
           <MuiLink href="https://www.anthropic.com/legal/commercial-terms" target="_blank" rel="noopener noreferrer">
             Anthropic
-          </MuiLink>
-          .
+          </MuiLink>{' '}
+          state this in their published API terms. Speechmatics has confirmed to TheirStory, who run the transcription,
+          that audio sent through their API is not used for training.
         </Paragraph>
       </Section>
 
