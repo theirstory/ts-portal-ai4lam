@@ -231,6 +231,38 @@ export const StoryTranscriptPanel = ({ isMobile = false }: StoryTranscriptPanelP
     };
   }, [isPlaying, isCurrentTimeOutOfView, setIsCurrentTimeOutOfView, isProgrammaticScrollRef]);
 
+  /**
+   * Pulls a target time onto a paragraph that actually exists.
+   *
+   * Scrolling only happens for a paragraph that contains the target, and a
+   * shared link carries whole seconds — so a link to a passage beginning at
+   * 3354.75 arrives as 3354, inside no paragraph at all, and the transcript
+   * sat still until playback caught up. Silence between paragraphs does the
+   * same thing to an honest timestamp. Snapping forward to the next paragraph
+   * to begin, or back to the last one if the target is past the end, makes
+   * every such link land somewhere.
+   */
+  useEffect(() => {
+    if (targetScrollTime === null || !sections.length) return;
+
+    const paragraphs = sections.flatMap((section) => section.paragraphs ?? []);
+    if (!paragraphs.length) return;
+
+    const isInsideAParagraph = paragraphs.some(
+      (paragraph) => targetScrollTime >= paragraph.start && targetScrollTime < paragraph.end,
+    );
+    // A section start is handled by the heading effect below.
+    if (isInsideAParagraph || sections.some((section) => section.start === targetScrollTime)) return;
+
+    const next = paragraphs
+      .filter((paragraph) => paragraph.start >= targetScrollTime)
+      .sort((a, b) => a.start - b.start)[0];
+    const previous = [...paragraphs].sort((a, b) => b.start - a.start).find((p) => p.start <= targetScrollTime);
+    const snapped = next ?? previous;
+
+    if (snapped && snapped.start !== targetScrollTime) setTargetScrollTime(snapped.start);
+  }, [targetScrollTime, sections, setTargetScrollTime]);
+
   // When targetScrollTime matches a section start, scroll to the section heading instead of the paragraph
   useEffect(() => {
     if (targetScrollTime === null) return;
