@@ -91,12 +91,12 @@ export default function AiTransparencyPage() {
             <Box component="tbody">
               <Row
                 what="Transcripts"
-                who="Automatic speech recognition, on TheirStory's platform, before the recording reached this portal."
+                who="Speech recognition by Speechmatics, run on TheirStory's platform before the recording reached this portal."
                 when="Once"
               />
               <Row
                 what="Chapters and summaries"
-                who="Written by a language model on TheirStory's platform from the transcript, then imported here."
+                who="Written from the transcript by OpenAI's GPT API, called from TheirStory's platform, then imported here."
                 when="Once"
               />
               <Row
