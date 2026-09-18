@@ -123,6 +123,22 @@ export default function AiTransparencyPage() {
           Only the last of these happens while you are here. The rest was done once, when the recordings were prepared,
           and the results are stored on this server.
         </Paragraph>
+        <Paragraph>
+          All three services are used under terms that say the material sent to them is not used to train their models
+          and is not kept on their servers long term. Their own policies are the authoritative statement of that —{' '}
+          <MuiLink href="https://www.speechmatics.com/legal" target="_blank" rel="noopener noreferrer">
+            Speechmatics
+          </MuiLink>
+          ,{' '}
+          <MuiLink href="https://openai.com/policies" target="_blank" rel="noopener noreferrer">
+            OpenAI
+          </MuiLink>{' '}
+          and{' '}
+          <MuiLink href="https://www.anthropic.com/legal/commercial-terms" target="_blank" rel="noopener noreferrer">
+            Anthropic
+          </MuiLink>
+          .
+        </Paragraph>
       </Section>
 
       {isChatEnabled && (
