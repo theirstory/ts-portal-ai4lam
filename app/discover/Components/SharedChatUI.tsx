@@ -556,8 +556,7 @@ export function ChatComposer({
               : {
                   input: {
                     startAdornment: (
-                      // Single-row field: centred, like any leading icon.
-                      <InputAdornment position="start" sx={{ mr: 0.25 }}>
+                      <InputAdornment position="start" sx={{ m: 0 }}>
                         <AttachFileButton compact={compact} />
                       </InputAdornment>
                     ),
@@ -565,23 +564,19 @@ export function ChatComposer({
                 }
           }
           sx={{
-            // In the empty state the question takes the first row on its own
-            // and the controls sit under it, so the placeholder starts at the
-            // field's left edge instead of being indented by the attach button
-            // standing beside it.
-            ...(fullHeight
-              ? {
-                  '& .MuiInputBase-inputMultiline': { order: 1, flex: '1 1 100%' },
-                  '& .MuiInputAdornment-positionStart': { order: 2, mr: 'auto' },
-                  '& .MuiInputAdornment-positionEnd': { order: 3, ml: 'auto' },
-                }
-              : {}),
+            // The question takes the first row on its own and the controls sit
+            // under it, so the placeholder and the attach button share a left
+            // edge rather than the text being indented by the button beside it.
+            '& .MuiInputBase-inputMultiline': { order: 1, flex: '1 1 100%' },
+            '& .MuiInputAdornment-positionStart': { order: 2, mr: 'auto', ml: 0 },
+            '& .MuiInputAdornment-positionEnd': { order: 3, ml: 'auto' },
             '& .MuiOutlinedInput-root': {
-              ...(fullHeight ? { px: 2, py: 1.5 } : {}),
+              px: fullHeight ? 2 : 1.5,
+              py: fullHeight ? 1.5 : 1,
               bgcolor: colors.background.paper,
-              alignItems: fullHeight ? 'center' : undefined,
-              flexWrap: fullHeight ? 'wrap' : undefined,
-              rowGap: fullHeight ? 1 : undefined,
+              alignItems: 'center',
+              flexWrap: 'wrap',
+              rowGap: 0.5,
               fontSize: fullHeight ? '1rem' : undefined,
               boxShadow: compact ? `0 1px 2px ${colors.common.shadow}` : 'none',
               minHeight: compact ? 52 : undefined,

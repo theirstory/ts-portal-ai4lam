@@ -48,7 +48,23 @@ export const ATTACHMENT_LIMITS = {
   maxStoredBytes: 120 * 1024 * 1024,
 } as const;
 
-const attachments = new Map<string, StoredAttachment>();
+/**
+ * Kept on globalThis rather than in module scope.
+ *
+ * Each route handler is bundled separately, so the upload route and the chat
+ * route each got their own copy of this module — and so their own Map. An
+ * image uploaded through one was invisible to the other, which read as "that
+ * attachment is no longer available" the moment it was used. A hot reload in
+ * development had the same effect. One instance per process fixes both.
+ */
+const globalScope = globalThis as typeof globalThis & {
+  __theirstoryChatAttachments?: Map<string, StoredAttachment>;
+};
+
+const attachments: Map<string, StoredAttachment> = (globalScope.__theirstoryChatAttachments ??= new Map<
+  string,
+  StoredAttachment
+>());
 
 const isExpired = (item: StoredAttachment, now: number) => now - item.createdAt > ATTACHMENT_LIMITS.ttlMs;
 
