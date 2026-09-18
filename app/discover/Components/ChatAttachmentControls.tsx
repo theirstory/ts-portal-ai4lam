@@ -45,7 +45,15 @@ export const AttachFileButton = ({ compact = false }: { compact?: boolean }) => 
             size={compact ? 'small' : 'medium'}
             onClick={() => fileInputRef.current?.click()}
             disabled={isAttaching}
-            aria-label="Attach a file">
+            aria-label="Attach a file"
+            sx={{
+              // The button's own padding (8px, or 5px when small) and the
+              // paperclip's internal whitespace together push the visible icon
+              // about a dozen pixels inside the field, which read as the text
+              // above it being misaligned. Pulled back so the two share an
+              // optical left edge; the hit area is unchanged.
+              ml: compact ? '-9px' : '-12px',
+            }}>
             {isAttaching ? <CircularProgress size={16} /> : <AttachFileIcon fontSize="small" />}
           </IconButton>
         </span>
