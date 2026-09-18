@@ -4,7 +4,9 @@ import { createChatProvider, getChatProviderSettings } from '@/lib/ai/chatProvid
 import { getZoteroSession } from '@/lib/zotero/cookies';
 import { searchUserLibrary } from '@/lib/zotero/client';
 import { isZoteroEnabled, isChatAttachmentsEnabled } from '@/config/organizationConfig';
-import { getAttachment, StoredAttachment } from '@/lib/chat/attachmentStore';
+import { getAttachment, putAttachment, StoredAttachment } from '@/lib/chat/attachmentStore';
+import { extractUrls, fetchWebPage, UnreadableUrlError } from '@/lib/chat/fetchWebPage';
+import { capText } from '@/lib/chat/extractAttachment';
 
 /**
  * What the reader attached, as context the model can quote from.
@@ -169,7 +171,7 @@ export async function POST(request: Request) {
           // Anything the reader attached that is still in memory. One that has
           // expired is simply absent — the client is told, rather than the
           // answer quietly being given without it.
-          const attachments = isChatAttachmentsEnabled
+          const attachments: StoredAttachment[] = isChatAttachmentsEnabled
             ? (attachmentIds ?? []).map((id) => getAttachment(id)).filter((item): item is StoredAttachment => !!item)
             : [];
           const missingAttachments = isChatAttachmentsEnabled
@@ -179,6 +181,72 @@ export async function POST(request: Request) {
             controller.enqueue(
               encoder.encode(sseEvent({ type: 'attachments_expired', ids: missingAttachments })),
             );
+          }
+
+          // Links the reader wrote into this message. Read here rather than
+          // behind a control of their own: pasting a link into a chat is
+          // already a request to look at it.
+          const pastedUrls = isChatAttachmentsEnabled ? extractUrls(query) : [];
+          if (pastedUrls.length) {
+            controller.enqueue(
+              encoder.encode(
+                sseEvent({
+                  type: 'status',
+                  status: pastedUrls.length === 1 ? 'Reading the link you shared...' : 'Reading the links you shared...',
+                }),
+              ),
+            );
+          }
+
+          for (const url of pastedUrls) {
+            // Skip one already read earlier in this conversation.
+            if (attachments.some((item) => item.sourceUrl === url)) continue;
+            try {
+              const page = await fetchWebPage(url);
+              const { text, truncated } = capText(page.text);
+              if (!text) continue;
+              const stored = putAttachment({
+                kind: 'webpage',
+                name: page.title || new URL(page.finalUrl).hostname,
+                sourceUrl: url,
+                text,
+                truncated,
+                bytes: page.bytes,
+              });
+              attachments.push(stored);
+              // The client shows it as an attachment, so the reader can see what
+              // was read and drop it.
+              controller.enqueue(
+                encoder.encode(
+                  sseEvent({
+                    type: 'attachment_added',
+                    attachment: {
+                      id: stored.id,
+                      kind: stored.kind,
+                      name: stored.name,
+                      sourceUrl: stored.sourceUrl,
+                      truncated: stored.truncated,
+                      bytes: stored.bytes,
+                    },
+                  }),
+                ),
+              );
+            } catch (error) {
+              // A link that cannot be read is not a failed answer: say so and
+              // carry on with the archive.
+              controller.enqueue(
+                encoder.encode(
+                  sseEvent({
+                    type: 'attachment_failed',
+                    url,
+                    error:
+                      error instanceof UnreadableUrlError
+                        ? error.message
+                        : 'That link could not be read.',
+                  }),
+                ),
+              );
+            }
           }
 
           const systemPrompt = buildSystemPrompt(

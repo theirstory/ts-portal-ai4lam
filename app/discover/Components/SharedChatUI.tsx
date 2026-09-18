@@ -11,7 +11,7 @@ import { ChatMessage as ChatMessageType } from '@/types/chat';
 import { ChatMessage } from './ChatMessage';
 import { TextSelectionPopover } from './TextSelectionPopover';
 import { type ChatLanguage, LanguageSelector, VoiceInputButton, VoiceRecordingComposer } from './ChatComposerControls';
-import { ChatAttachmentBar } from './ChatAttachmentBar';
+import { AttachFileButton, ChatAttachmentChips } from './ChatAttachmentControls';
 import { useVoiceRecorder } from './useVoiceRecorder';
 import { colors } from '@/lib/theme';
 
@@ -475,9 +475,9 @@ export function ChatComposer({
 
   return (
     <>
-      {/* Above the field rather than inside it: what is attached is part of the
-          question being asked, and has to stay visible while it is typed. */}
-      <ChatAttachmentBar compact={compact} />
+      {/* Only present once something is attached: the control to attach lives
+          inside the field. */}
+      <ChatAttachmentChips compact={compact} />
       <Box
         id={compact ? 'chat-composer-compact' : fullHeight ? 'chat-composer-empty' : 'chat-composer'}
         component="form"
@@ -510,6 +510,11 @@ export function ChatComposer({
             fullHeight
               ? {
                   input: {
+                    startAdornment: (
+                      <InputAdornment position="start" sx={{ alignSelf: 'flex-end', ml: 0.5, mb: 0.75 }}>
+                        <AttachFileButton />
+                      </InputAdornment>
+                    ),
                     endAdornment: (
                       <InputAdornment
                         position="end"
@@ -550,7 +555,15 @@ export function ChatComposer({
                     ),
                   },
                 }
-              : undefined
+              : {
+                  input: {
+                    startAdornment: (
+                      <InputAdornment position="start" sx={{ alignSelf: 'flex-end', mb: compact ? 0.5 : 0.75 }}>
+                        <AttachFileButton compact={compact} />
+                      </InputAdornment>
+                    ),
+                  },
+                }
           }
           sx={{
             '& .MuiOutlinedInput-root': {

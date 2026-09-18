@@ -177,3 +177,19 @@ export const fetchWebPage = async (rawUrl: string): Promise<FetchedPage> => {
 
   throw new UnreadableUrlError('That link is not a readable page. Upload the file instead.');
 };
+
+/**
+ * Links a reader wrote into their message.
+ *
+ * A pasted link is a request to read it — that is what pasting a link into a
+ * chat has always meant — so the portal follows them rather than offering a
+ * separate control for the same act. Capped, because a message could contain
+ * a dozen and each one is a request this server makes.
+ */
+export const MAX_LINKS_PER_MESSAGE = 3;
+
+export const extractUrls = (text: string): string[] => {
+  const found = text.match(/https?:\/\/[^\s<>"'`)\]]+/gi) ?? [];
+  const cleaned = found.map((url) => url.replace(/[.,;:!?]+$/, ''));
+  return [...new Set(cleaned)].slice(0, MAX_LINKS_PER_MESSAGE);
+};

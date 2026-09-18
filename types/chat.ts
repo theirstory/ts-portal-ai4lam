@@ -57,4 +57,6 @@ export type ChatStreamChunk =
   | { type: 'text'; content: string }
   | { type: 'zotero_context'; items: ZoteroContextItem[] }
   | { type: 'attachments_expired'; ids: string[] }
+  | { type: 'attachment_added'; attachment: ChatAttachment }
+  | { type: 'attachment_failed'; url: string; error: string }
   | { type: 'done' };

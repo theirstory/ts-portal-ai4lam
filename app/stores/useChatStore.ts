@@ -36,7 +36,6 @@ type ChatStore = {
 
   sendMessage: (content: string) => Promise<void>;
   addAttachmentFile: (file: File) => Promise<void>;
-  addAttachmentUrl: (url: string) => Promise<void>;
   removeAttachment: (id: string) => void;
   setAttachmentError: (message: string | null) => void;
   stopStreaming: () => void;
@@ -244,6 +243,19 @@ export const useChatStore = create<ChatStore>()(
                       false,
                       'sendMessage:zotero_context',
                     );
+                  } else if (chunk.type === 'attachment_added') {
+                    // A link the reader pasted, read by the server. Shown as an
+                    // attachment so they can see what was used and remove it.
+                    set(
+                      (state) =>
+                        state.attachments.some((item) => item.id === chunk.attachment.id)
+                          ? state
+                          : { attachments: [...state.attachments, chunk.attachment] },
+                      false,
+                      'sendMessage:attachment_added',
+                    );
+                  } else if (chunk.type === 'attachment_failed') {
+                    set({ attachmentError: chunk.error }, false, 'sendMessage:attachment_failed');
                   } else if (chunk.type === 'attachments_expired') {
                     // The server restarted, or two hours passed. Say so rather
                     // than letting the answer look like it read them.
@@ -508,31 +520,6 @@ export const useChatStore = create<ChatStore>()(
             set({ attachmentError: 'That file could not be sent.' }, false, 'addAttachmentFile:error');
           } finally {
             set({ isAttaching: false }, false, 'addAttachmentFile:end');
-          }
-        },
-
-        addAttachmentUrl: async (url: string) => {
-          set({ isAttaching: true, attachmentError: null }, false, 'addAttachmentUrl:start');
-          try {
-            const response = await fetch('/api/discover/attachments', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ url }),
-            });
-            const data = await response.json().catch(() => ({}));
-            if (!response.ok) {
-              set({ attachmentError: data?.error || 'That link could not be read.' }, false, 'addAttachmentUrl:error');
-              return;
-            }
-            set(
-              (state) => ({ attachments: [...state.attachments, data as ChatAttachment] }),
-              false,
-              'addAttachmentUrl:done',
-            );
-          } catch {
-            set({ attachmentError: 'That link could not be read.' }, false, 'addAttachmentUrl:error');
-          } finally {
-            set({ isAttaching: false }, false, 'addAttachmentUrl:end');
           }
         },
 
