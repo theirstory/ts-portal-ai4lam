@@ -172,8 +172,14 @@ export default function AiTransparencyPage() {
       <Section title="What this site does not do">
         <Paragraph>
           There are no user accounts, no advertising, and no third-party analytics or tracking scripts. Nothing you
-          search for is tied to an identity, because there is no identity to tie it to. The recordings are not public:
-          the site is behind a shared password, and links you share will ask for it.
+          search for is tied to an identity, because there is no identity to tie it to.
+        </Paragraph>
+        <Paragraph>
+          The site is behind a shared password: a link you share will ask for it before showing the page, and will then
+          open at the passage it points to. The audio and video themselves are a different matter — they are served from
+          Mux on links that are not password-protected, so anyone holding one of those media links can play the
+          recording without passing the gate. Treat the password as something that keeps the archive from being browsed,
+          not as something that seals the recordings.
         </Paragraph>
       </Section>
 
