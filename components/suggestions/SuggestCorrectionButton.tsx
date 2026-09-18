@@ -25,7 +25,7 @@ export const SuggestCorrectionButton = ({ context, display = 'icon', label, size
   const openSuggestion = useSuggestionStore((state) => state.openSuggestion);
   if (!isSuggestionsEnabled) return null;
 
-  const text = label ?? 'Suggest a correction';
+  const text = label ?? 'Suggest an edit';
   const open = (event: React.MouseEvent) => {
     // These often sit inside something clickable — a transcript word, an
     // entity chip, a result row — and raising a correction is not a request to

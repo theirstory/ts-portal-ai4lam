@@ -1,7 +1,13 @@
 import React from 'react';
 import type { Metadata } from 'next';
 import { Box, Divider, Link as MuiLink, Typography } from '@mui/material';
-import { organizationConfig, config, isChatEnabled, isChatAttachmentsEnabled } from '@/config/organizationConfig';
+import {
+  organizationConfig,
+  config,
+  isChatEnabled,
+  isChatAttachmentsEnabled,
+  suggestionsRepositoryUrl,
+} from '@/config/organizationConfig';
 import { colors } from '@/lib/theme';
 
 export const metadata: Metadata = {
@@ -186,8 +192,16 @@ export default function AiTransparencyPage() {
       <Section title="When you tell us something is wrong">
         <Paragraph>
           Corrections you submit — to a transcript, an entity, a summary or an index entry — are filed as public issues
-          on the project&apos;s GitHub, along with the passage you quoted and, if you give one, your name. Do not put
-          anything private in a correction.
+          on{' '}
+          {suggestionsRepositoryUrl ? (
+            <MuiLink href={suggestionsRepositoryUrl} target="_blank" rel="noopener noreferrer">
+              the project&apos;s GitHub
+            </MuiLink>
+          ) : (
+            "the project's GitHub"
+          )}
+          , along with the passage you quoted and, if you give one, your name. Do not put anything private in a
+          correction.
         </Paragraph>
       </Section>
 

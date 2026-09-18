@@ -175,6 +175,10 @@ export const suggestionsConfig = config.features?.suggestions;
 export const isSuggestionsEnabled = Boolean(
   suggestionsConfig?.enabled && suggestionsConfig?.repository?.trim(),
 );
+/** Where suggestions end up, so the interface can point a reader at it. */
+export const suggestionsRepositoryUrl = suggestionsConfig?.repository?.trim()
+  ? `https://github.com/${suggestionsConfig.repository.trim()}/issues`
+  : null;
 export const externalNavLinks = (config.ui?.externalNavLinks ?? []).filter(
   (link) => link?.label?.trim() && link?.href?.trim(),
 );

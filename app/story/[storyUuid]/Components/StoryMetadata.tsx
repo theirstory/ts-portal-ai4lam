@@ -63,7 +63,6 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
                 {shareUrl && <ShareButton url={shareUrl} title={shareTitle} label="Share this recording" />}
                 <SuggestCorrectionButton
                   context={{ ...suggestionContext, field: 'Recording metadata' }}
-                  label="Suggest a correction to this recording's details"
                 />
               </Box>
             </Box>
@@ -163,7 +162,6 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
                       participant or summary raises it from here and says which. */}
                   <SuggestCorrectionButton
                     context={{ ...suggestionContext, field: 'Recording metadata' }}
-                    label="Suggest a correction to this recording's details"
                   />
                 </Box>
               </Box>
@@ -202,7 +200,6 @@ export const StoryMetadata = ({ isMobile = false }: StoryMetadataProps) => {
                     field: 'Summary',
                     quotedText: interview_description?.trim() || undefined,
                   }}
-                  label="Suggest a correction to this summary"
                 />
               </Box>
               <Typography variant="body2" color="text.secondary">

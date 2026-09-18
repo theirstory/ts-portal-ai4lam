@@ -356,7 +356,7 @@ export const StoryTranscriptSelectionPopover = ({ containerRef, onAskAI, onZoter
             whiteSpace: 'nowrap',
             borderRadius: 0,
           }}>
-          {section ? 'Suggest a correction to this chapter' : 'Suggest a correction'}
+          Suggest an edit
         </Button>
       )}
       {showShare && (

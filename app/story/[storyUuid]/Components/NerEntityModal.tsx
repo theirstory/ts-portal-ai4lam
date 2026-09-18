@@ -509,7 +509,6 @@ export const NerEntityModal: React.FC<NerEntityModalProps> = ({
               recordingId: currentStoryUuid,
               recordingTitle: storyHubPage?.properties?.interview_title as string | undefined,
             }}
-            label="Suggest a correction to this entity"
           />
           <IconButton
             aria-label="close"

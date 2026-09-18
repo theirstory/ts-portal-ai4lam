@@ -123,7 +123,6 @@ export function IndexesListView({
                     // happened to raise it from.
                     pageUrl: buildStoryShareUrl({ storyId: story.uuid }),
                   }}
-                  label="Suggest a correction to this index entry"
                 />
               </Box>
               {chapters.length > 0 && (
@@ -201,8 +200,7 @@ export function IndexesListView({
                           // Opens the recording where the chapter starts.
                           pageUrl: buildStoryShareUrl({ storyId: story.uuid, startTime: ch.start_time }),
                         }}
-                        label="Suggest a correction to this chapter"
-                      />
+                        />
                     </Box>
                   ))}
                 </Box>

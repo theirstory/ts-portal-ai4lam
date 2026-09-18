@@ -15,6 +15,7 @@ import {
   Typography,
 } from '@mui/material';
 import { useSuggestionStore } from '@/app/stores/useSuggestionStore';
+import { suggestionsRepositoryUrl } from '@/config/organizationConfig';
 import { SUGGESTION_KIND_LABELS, SUGGESTION_LIMITS } from '@/types/suggestion';
 import { colors } from '@/lib/theme';
 
@@ -79,7 +80,7 @@ export const SuggestionDialog = () => {
   return (
     <Dialog open onClose={isSending ? undefined : closeSuggestion} maxWidth="sm" fullWidth>
       <DialogTitle sx={{ pb: 1 }}>
-        Suggest a correction
+        Suggest an edit
         <Typography component="div" sx={{ fontSize: '0.8125rem', color: 'text.secondary', mt: 0.5 }}>
           {SUGGESTION_KIND_LABELS[context.kind]}
           {detail ? ` · ${detail}` : ''}
@@ -140,7 +141,15 @@ export const SuggestionDialog = () => {
             )}
 
             <Typography sx={{ fontSize: '0.75rem', color: 'text.secondary', mt: 2 }}>
-              Suggestions are filed publicly as issues on the project's GitHub, where anyone can read them.
+              Suggestions are filed publicly as issues on{' '}
+              {suggestionsRepositoryUrl ? (
+                <MuiLink href={suggestionsRepositoryUrl} target="_blank" rel="noopener noreferrer">
+                  the project&apos;s GitHub
+                </MuiLink>
+              ) : (
+                "the project's GitHub"
+              )}
+              , where anyone can read them.
             </Typography>
           </>
         )}
