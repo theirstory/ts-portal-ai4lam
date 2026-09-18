@@ -182,7 +182,7 @@ export default function AiTransparencyPage() {
         </Paragraph>
         <Paragraph>
           The archive is behind a shared password. A link you share — to a recording, or to a moment inside one — asks
-          for it before showing anything, and then opens at the passage it points to.
+          for the password before showing anything, and then opens at the passage it points to.
         </Paragraph>
       </Section>
 
