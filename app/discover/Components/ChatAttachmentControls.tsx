@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef } from 'react';
-import { Alert, Box, Chip, CircularProgress, IconButton, Tooltip, Typography } from '@mui/material';
+import { Alert, Box, Chip, CircularProgress, IconButton, Link as MuiLink, Tooltip, Typography } from '@mui/material';
 import AttachFileIcon from '@mui/icons-material/AttachFile';
 import DescriptionOutlinedIcon from '@mui/icons-material/DescriptionOutlined';
 import ImageOutlinedIcon from '@mui/icons-material/ImageOutlined';
@@ -118,7 +118,10 @@ export const ChatAttachmentChips = ({ compact = false }: { compact?: boolean }) 
 
       {attachments.length > 0 && (
         <Typography sx={{ fontSize: '0.6875rem', color: 'text.secondary', mt: 0.5 }}>
-          Sent to the AI model with your question, and dropped when you clear the chat.
+          Sent to the AI model with your question, and dropped when you clear the chat.{' '}
+          <MuiLink href="/ai" sx={{ fontSize: 'inherit' }}>
+            How AI is used here
+          </MuiLink>
         </Typography>
       )}
 

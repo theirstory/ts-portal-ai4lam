@@ -51,6 +51,10 @@ export const TopBarNav = ({
     { label: 'RECORDINGS', href: '/' },
     { label: 'INDEXES', href: '/indexes' },
     ...(shouldShowCollectionsLink ? [{ label: 'COLLECTIONS', href: '/collections' }] : []),
+    // Last, but in the nav rather than buried in a footer: a reader deciding
+    // whether to trust a transcript or attach a document should be able to
+    // find out how the archive was made without going looking for it.
+    { label: 'ABOUT AI', href: '/ai' },
   ];
 
   const collapseToggle = !isFullScreenPage && (
