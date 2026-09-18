@@ -511,7 +511,7 @@ export function ChatComposer({
               ? {
                   input: {
                     startAdornment: (
-                      <InputAdornment position="start" sx={{ alignSelf: 'flex-end', ml: 0.5, mb: 0.75 }}>
+                      <InputAdornment position="start" sx={{ m: 0 }}>
                         <AttachFileButton />
                       </InputAdornment>
                     ),
@@ -519,9 +519,7 @@ export function ChatComposer({
                       <InputAdornment
                         position="end"
                         sx={{
-                          alignSelf: 'flex-end',
-                          mr: 0.5,
-                          mb: 0.5,
+                          m: 0,
                           pointerEvents: 'auto',
                           position: 'relative',
                           zIndex: 2,
@@ -558,7 +556,8 @@ export function ChatComposer({
               : {
                   input: {
                     startAdornment: (
-                      <InputAdornment position="start" sx={{ alignSelf: 'flex-end', mb: compact ? 0.5 : 0.75 }}>
+                      // Single-row field: centred, like any leading icon.
+                      <InputAdornment position="start" sx={{ mr: 0.25 }}>
                         <AttachFileButton compact={compact} />
                       </InputAdornment>
                     ),
@@ -566,9 +565,23 @@ export function ChatComposer({
                 }
           }
           sx={{
+            // In the empty state the question takes the first row on its own
+            // and the controls sit under it, so the placeholder starts at the
+            // field's left edge instead of being indented by the attach button
+            // standing beside it.
+            ...(fullHeight
+              ? {
+                  '& .MuiInputBase-inputMultiline': { order: 1, flex: '1 1 100%' },
+                  '& .MuiInputAdornment-positionStart': { order: 2, mr: 'auto' },
+                  '& .MuiInputAdornment-positionEnd': { order: 3, ml: 'auto' },
+                }
+              : {}),
             '& .MuiOutlinedInput-root': {
+              ...(fullHeight ? { px: 2, py: 1.5 } : {}),
               bgcolor: colors.background.paper,
-              alignItems: fullHeight ? 'flex-end' : undefined,
+              alignItems: fullHeight ? 'center' : undefined,
+              flexWrap: fullHeight ? 'wrap' : undefined,
+              rowGap: fullHeight ? 1 : undefined,
               fontSize: fullHeight ? '1rem' : undefined,
               boxShadow: compact ? `0 1px 2px ${colors.common.shadow}` : 'none',
               minHeight: compact ? 52 : undefined,
