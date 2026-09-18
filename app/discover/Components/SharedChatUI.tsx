@@ -451,6 +451,10 @@ export function ChatComposer({
   fullHeight = false,
 }: ChatComposerProps) {
   const compact = variant === 'compact';
+  // In theme units: 4 → 32px, 3 → 24px, 1 → 8px. The theme's spacing unit and
+  // its base radius are both 8px, so one number serves as the corner radius
+  // and as the padding that keeps content clear of that corner.
+  const fieldRounding = fullHeight ? 4 : compact ? 3 : 1;
   const voiceRecorder = useVoiceRecorder({
     language: selectedLanguage,
     inputValue: input,
@@ -571,7 +575,12 @@ export function ChatComposer({
             '& .MuiInputAdornment-positionStart': { order: 2, mr: 'auto', ml: 0 },
             '& .MuiInputAdornment-positionEnd': { order: 3, ml: 'auto' },
             '& .MuiOutlinedInput-root': {
-              px: fullHeight ? 2 : 1.5,
+              // Padded by the corner radius itself, so the content starts where
+              // the curve ends and the field's left edge is a straight line
+              // beside everything in it. Both values are the same number of
+              // theme units because the theme's spacing unit and its base
+              // radius are both 8px — see fieldRounding.
+              px: fieldRounding,
               py: fullHeight ? 1.5 : 1,
               bgcolor: colors.background.paper,
               alignItems: 'center',
@@ -580,7 +589,7 @@ export function ChatComposer({
               fontSize: fullHeight ? '1rem' : undefined,
               boxShadow: compact ? `0 1px 2px ${colors.common.shadow}` : 'none',
               minHeight: compact ? 52 : undefined,
-              borderRadius: fullHeight ? 4 : compact ? 3 : undefined,
+              borderRadius: fieldRounding,
               '& fieldset': {
                 borderColor: fullHeight || compact ? colors.grey[300] : undefined,
               },
