@@ -181,11 +181,8 @@ export default function AiTransparencyPage() {
           search for is tied to an identity, because there is no identity to tie it to.
         </Paragraph>
         <Paragraph>
-          The site is behind a shared password: a link you share will ask for it before showing the page, and will then
-          open at the passage it points to. The audio and video themselves are a different matter — they are served from
-          Mux on links that are not password-protected, so anyone holding one of those media links can play the
-          recording without passing the gate. Treat the password as something that keeps the archive from being browsed,
-          not as something that seals the recordings.
+          The archive is behind a shared password. A link you share — to a recording, or to a moment inside one — asks
+          for it before showing anything, and then opens at the passage it points to.
         </Paragraph>
       </Section>
 
